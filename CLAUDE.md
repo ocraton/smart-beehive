@@ -8,8 +8,12 @@ esperienza pregressa in MQTT, Node-RED, InfluxDB, Grafana.
 Requisiti già validati dal professore: monitoraggio a distanza di una o
 più arnie (simulate), con loop di controllo reale su riscaldamento/
 ventilazione, rilevamento di anomalie, gestione multi-arnia e
-forecasting sullo storico. Vedi `docs/requisiti.md` per il testo
-completo inviato ed approvato.
+forecasting sullo storico. Il testo integrale della bozza inviata ed
+approvata è in `.claude/docs/requisiti.md` — **non versionato**
+(vive sotto `.claude/`, in `.gitignore`), quindi presente solo sulla
+macchina dello sviluppatore, non in un clone fresco del repo. Il
+riepilogo sopra e le decisioni architetturali più sotto sono la fonte
+di verità per chiunque legga solo questo file.
 
 Scadenza: sviluppo + demo entro fine novembre.
 
