@@ -9,5 +9,18 @@ services:
       - mosquitto_data:/mosquitto/data
     restart: unless-stopped
 
+  simulator:
+    build: ./simulator
+    container_name: beehive_simulator
+    depends_on:
+      - mosquitto
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      HIVE_IDS: "hive-01,hive-02"
+      TICK_SECONDS: 5
+      SIM_MINUTES_PER_TICK: 15
+    restart: unless-stopped
+
 volumes:
   mosquitto_data:

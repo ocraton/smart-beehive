@@ -123,5 +123,16 @@ registra un Last Will `offline` (retained) e pubblica `online`
   persistenza su named volume). Verificati a mano con
   `mosquitto_pub`/`mosquitto_sub`: wildcard `+`/`#`, retained message,
   Last Will and Testament, comportamento del QoS.
+- **Step 2 — completato**: simulatore arnie in Python containerizzato.
+  Ogni arnia ha connessione MQTT propria con client_id = hive_id,
+  pubblica telemetria JSON sui topic `apiary/{hive_id}/sensors/*` (QoS 0),
+  riceve comandi ON/OFF per heater/fan su `apiary/{hive_id}/actuators/*/cmd`
+  (QoS 1) e conferma stato su `apiary/{hive_id}/actuators/*/state` (retained).
+  Fisica simulata: ciclo esterno 24h sinusoidale con rumore, inerzia termica
+  su brood_temp verso target dipendente da attuatori, umidità con logica simile,
+  weight con ciclo diurno/notturno, flights legati a condizioni meteo.
+  Tempo simulato (15 min/tick) nei timestamp ISO 8601 UTC. Loop sincrono senza
+  threading, una connessione per arnia per corretto online/offline per singola
+  unità.
 - **Step successivo**: da concordare con lo sviluppatore — non
   procedere senza il suo via libera esplicito.
