@@ -81,7 +81,7 @@ class Hive:
         self._update_external_conditions()
         self._update_brood_temperature()
         self._update_humidity()
-        self._update_weight()
+        self._update_weight(sim_minutes_per_tick)
         self._update_flights()
         self._publish_telemetry()
 
@@ -127,8 +127,8 @@ class Hive:
         self.humidity += (target_hum - self.humidity) * self.humidity_inercia + noise
         self.humidity = max(30, min(90, self.humidity))
 
-    def _update_weight(self):
-        # Diurnal cycle: grow during day, decline at night
+    def _update_weight(self, sim_minutes_per_tick):
+        ticks_per_sim_day = 1440 / sim_minutes_per_tick
         cycle_position = (self.sim_time_minutes % 1440) / 1440.0
         # Day is roughly 6:00 to 18:00 (0.25 to 0.75 of cycle)
         is_daytime = 0.25 < cycle_position < 0.75
@@ -136,10 +136,10 @@ class Hive:
         import random
         if is_daytime and self.ext_temp > 15:
             # Small daily gain during foraging hours
-            self.weight += self.weight_daily_growth / 288  # 288 ticks per 24h @ 5sec
+            self.weight += self.weight_daily_growth / ticks_per_sim_day
         else:
             # Small nightly decline (consumption)
-            self.weight -= self.weight_daily_decline / 288
+            self.weight -= self.weight_daily_decline / ticks_per_sim_day
 
         self.weight = max(10, min(60, self.weight))
 
