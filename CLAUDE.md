@@ -131,7 +131,8 @@ registra un Last Will `offline` (retained) e pubblica `online`
   Fisica simulata: ciclo esterno 24h sinusoidale con rumore, inerzia termica
   su brood_temp verso target dipendente da attuatori, umidità con logica simile,
   weight con ciclo diurno/notturno, flights legati a condizioni meteo.
-  Tempo simulato (15 min/tick) nei timestamp ISO 8601 UTC. Loop sincrono senza
+  La fisica gira a tempo accelerato (15 min simulati per tick), mentre i
+  timestamp `ts` nei payload sono l'ora reale UTC. Loop sincrono senza
   threading, una connessione per arnia per corretto online/offline per singola
   unità.
 - **Step successivo**: da concordare con lo sviluppatore — non

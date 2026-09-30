@@ -25,7 +25,7 @@ class Hive:
         self.heater_on = False
         self.fan_on = False
 
-        # Simulation time (in minutes, since start)
+        # Clock of the accelerated physics (day/night cycle), not of the published "ts"
         self.sim_time_minutes = 0
 
         # Physics constants
@@ -157,7 +157,7 @@ class Hive:
             self.flights = max(0, self.flights)
 
     def _publish_telemetry(self):
-        timestamp = self._get_sim_timestamp()
+        timestamp = self._get_timestamp()
         sensors = {
             "brood_temp": {
                 "value": round(self.brood_temp, 2),
@@ -195,13 +195,10 @@ class Hive:
             topic = f"apiary/{self.hive_id}/sensors/{sensor_name}"
             self.mqtt.publish_json(topic, data, qos=0, retain=False)
 
-    def _get_sim_timestamp(self):
-        # Convert sim_time_minutes to ISO 8601 UTC timestamp
-        # Start from 2026-09-28 00:00:00 UTC
-        from datetime import timedelta
-        start_time = datetime(2026, 9, 28, 0, 0, 0, tzinfo=timezone.utc)
-        sim_time = start_time + timedelta(minutes=self.sim_time_minutes)
-        return sim_time.isoformat().replace("+00:00", "Z")
+    def _get_timestamp(self):
+        # Wall-clock time, like a real sensor: sim_time_minutes only drives the
+        # accelerated physics, while "ts" must stay comparable with live data and backfill.
+        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     def shutdown(self):
         # Publish offline status explicitly (before LWT takes over)
