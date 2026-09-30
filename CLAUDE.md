@@ -64,7 +64,9 @@ Container Docker separati, orchestrati con un unico `docker-compose.yml`:
   separati: per un solo sviluppatore in 9 settimane la granularità di
   processo va tenuta bassa.
 - **InfluxDB 2**: serie temporali. `hive_id` come *tag* (indicizzato,
-  per filtrare), le misure come *field*.
+  per filtrare), le misure come *field*. Schema concordato: measurement
+  `telemetry`, tag `hive_id` e `sensor`, field `value`, timestamp preso
+  dal campo `ts` del payload (precisione in secondi).
 - **Analytics** (Python, schedulato): legge lo storico da InfluxDB,
   applica tecniche della lezione 10 (media mobile, exponential
   smoothing, regressione lineare) e riscrive previsioni su InfluxDB
@@ -75,6 +77,8 @@ Container Docker separati, orchestrati con un unico `docker-compose.yml`:
 - **Tempo simulato**: uno script di backfill scrive mesi di storico
   sintetico (con stagionalità) direttamente su InfluxDB, per rendere
   credibile il forecasting senza aspettare mesi reali durante la demo.
+  I dati live hanno timestamp reali (con fisica accelerata), mentre il
+  backfill scriverà lo storico nel passato fino ad "adesso".
 - **Soglie/configurazione**: file JSON per arnia, ripubblicato da
   Node-RED come messaggio MQTT *retained* su `apiary/{hive_id}/config`.
   Niente container dedicato per ora (vedi "Cosa abbiamo scartato").
@@ -135,5 +139,12 @@ registra un Last Will `offline` (retained) e pubblica `online`
   timestamp `ts` nei payload sono l'ora reale UTC. Loop sincrono senza
   threading, una connessione per arnia per corretto online/offline per singola
   unità.
+- **Step 3 — completato**: infrastruttura InfluxDB 2.7 + Node-RED 5 in
+  `docker-compose.yml`, senza flow né dati. Credenziali in `.env`
+  (template `.env.example`), InfluxDB inizializzato in setup mode con
+  org/bucket `beehive`, retention infinita e healthcheck `influx ping`.
+  Node-RED buildato da `nodered/` con `node-red-contrib-influxdb`,
+  `/data` in bind mount su `nodered/data` (flows.json versionato,
+  credenziali dei flow in `.gitignore`), avviato solo a InfluxDB healthy.
 - **Step successivo**: da concordare con lo sviluppatore — non
   procedere senza il suo via libera esplicito.

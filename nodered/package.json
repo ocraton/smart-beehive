@@ -1,0 +1,16 @@
+{
+    "name": "smart-beehive-node-red",
+    "description": "Node-RED with the extra nodes used by the Smart Beehive project",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "start": "node $NODE_OPTIONS node_modules/node-red/red.js $FLOWS"
+    },
+    "dependencies": {
+        "node-red": "5.0.7",
+        "node-red-contrib-influxdb": "0.7.0"
+    },
+    "engines": {
+        "node": ">=18"
+    }
+}

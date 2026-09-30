@@ -3,3 +3,10 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+# Node-RED runtime files: only flows.json (and settings.js) belong in the repo
+nodered/data/node_modules/
+nodered/data/.npm/
+nodered/data/flows_cred.json
+nodered/data/.config*.json
+nodered/data/.config*.json.backup
