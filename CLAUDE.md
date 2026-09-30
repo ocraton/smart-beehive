@@ -63,10 +63,10 @@ Container Docker separati, orchestrati con un unico `docker-compose.yml`:
   (le tre regole sui requisiti). Flow separati, non microservizi
   separati: per un solo sviluppatore in 9 settimane la granularità di
   processo va tenuta bassa.
-- **InfluxDB 2**: serie temporali. `hive_id` come *tag* (indicizzato,
-  per filtrare), le misure come *field*. Schema concordato: measurement
-  `telemetry`, tag `hive_id` e `sensor`, field `value`, timestamp preso
-  dal campo `ts` del payload (precisione in secondi).
+- **InfluxDB 2**: serie temporali. Schema concordato: measurement
+  `telemetry`, tag `hive_id` e `sensor` (indicizzati, per filtrare),
+  field `value` (il valore misurato), timestamp preso dal campo `ts`
+  del payload (precisione in secondi).
 - **Analytics** (Python, schedulato): legge lo storico da InfluxDB,
   applica tecniche della lezione 10 (media mobile, exponential
   smoothing, regressione lineare) e riscrive previsioni su InfluxDB
