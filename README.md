@@ -64,3 +64,28 @@ docker compose exec mosquitto mosquitto_pub -q 1 -t "apiary/hive-01/actuators/he
 After the heater command, `brood_temp` of `hive-01` rises over the next ticks.
 The `ts` field of each payload is the real UTC time; the physics (day/night
 cycle) runs accelerated at `SIM_MINUTES_PER_TICK` simulated minutes per tick.
+
+## Step 4 verification
+
+The "Ingestion" flow (`nodered/data/flows.json`) writes every sensor reading to
+InfluxDB as measurement `telemetry`, tags `hive_id` + `sensor`, field `value`.
+About 30 seconds after `docker compose up -d`, this query should return one
+series per hive and sensor (2 hives x 6 sensors = 12), each with roughly one
+point per 5 seconds (~60 per 5 minutes):
+
+```bash
+set -a; . ./.env; set +a
+docker compose exec influxdb influx query --org beehive --token "$INFLUXDB_TOKEN" \
+ 'from(bucket:"beehive") |> range(start:-5m)
+  |> filter(fn:(r)=>r._measurement=="telemetry")
+  |> group(columns:["hive_id","sensor"]) |> count()'
+```
+
+No point should have a 1970 timestamp, and `docker compose logs nodered` should
+show no errors.
+
+**After a fresh clone:** `nodered/data/flows_cred.json` is git-ignored, so the
+InfluxDB token is not in the repo. Open http://localhost:1880, double-click the
+`influxdb batch` node, edit the "InfluxDB beehive" server, paste the value of
+`INFLUXDB_TOKEN` from your `.env` in the Token field, then Deploy. This is
+needed only once.

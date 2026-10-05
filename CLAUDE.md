@@ -146,5 +146,11 @@ registra un Last Will `offline` (retained) e pubblica `online`
   Node-RED buildato da `nodered/` con `node-red-contrib-influxdb`,
   `/data` in bind mount su `nodered/data` (flows.json versionato,
   credenziali dei flow in `.gitignore`), avviato solo a InfluxDB healthy.
+- **Step 4 — completato**: flow di ingestion in Node-RED (tab "Ingestion" in
+  `nodered/data/flows.json`): `mqtt in` su `apiary/+/sensors/#` → function che
+  costruisce il punto (`telemetry`, tag `hive_id`/`sensor`, field `value`,
+  timestamp da `ts`) → `influxdb batch` (config node v2.0, org/bucket
+  `beehive`). Token solo in `flows_cred.json` (non versionato). Verificato con
+  query Flux: 12 serie (2 arnie x 6 sensori), nessun punto nel 1970.
 - **Step successivo**: da concordare con lo sviluppatore — non
   procedere senza il suo via libera esplicito.
