@@ -65,7 +65,30 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  grafana:
+    image: grafana/grafana-oss:13.0.2
+    container_name: beehive_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?copy .env.example to .env}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?copy .env.example to .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      TZ: ${TZ:-Europe/Rome}
+      # Only used to interpolate grafana/provisioning/datasources/influxdb.yaml
+      INFLUXDB_ORG: ${INFLUXDB_ORG:?copy .env.example to .env}
+      INFLUXDB_BUCKET: ${INFLUXDB_BUCKET:?copy .env.example to .env}
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:?copy .env.example to .env}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   mosquitto_data:
   influxdb_data:
   influxdb_config:
+  grafana_data:

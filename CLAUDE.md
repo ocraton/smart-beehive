@@ -152,5 +152,11 @@ registra un Last Will `offline` (retained) e pubblica `online`
   timestamp da `ts`) → `influxdb batch` (config node v2.0, org/bucket
   `beehive`). Token solo in `flows_cred.json` (non versionato). Verificato con
   query Flux: 12 serie (2 arnie x 6 sensori), nessun punto nel 1970.
+- **Step 5 — completato**: container Grafana OSS 13.0.2 in `docker-compose.yml`
+  (porta 3000, volume `grafana_data`, avviato a InfluxDB healthy). Data source
+  InfluxDB provisioned come codice in `grafana/provisioning/datasources/` con
+  uid fisso `influxdb-beehive`, linguaggio Flux, token passato solo via
+  variabile d'ambiente (mai in file versionati). Nessuna dashboard ancora.
+  Verificati health della data source e una query Flux su `brood_temp`.
 - **Step successivo**: da concordare con lo sviluppatore — non
   procedere senza il suo via libera esplicito.
