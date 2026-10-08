@@ -50,9 +50,18 @@ Container Docker separati, orchestrati con un unico `docker-compose.yml`:
 - **Simulatore arnie** (Python, `paho-mqtt`): un solo container, N arnie
   come task/oggetti indipendenti al suo interno (non un container per
   arnia — vedi "Cosa abbiamo scartato"). Modella una piccola fisica con
-  inerzia/feedback (es. temperatura di covata che tende verso un
-  asintoto in base allo stato del riscaldamento), altrimenti il control
-  loop non avrebbe nulla su cui reagire. Deve pubblicare sugli stessi
+  inerzia/feedback, altrimenti il control loop non avrebbe nulla su cui
+  reagire. La colonia si termoregola: senza attuatori la covata tende a
+  ~34.3 °C finché la temperatura esterna resta nella banda di comfort
+  (10–28 °C), e ne esce in proporzione quando fa più freddo o più caldo;
+  heater ON porta il target a 35 °C, fan ON a 30 °C. Il fan abbassa il
+  target dell'umidità interna di 13 punti (non a un valore fisso). A riposo
+  il rumore è tarato per non far mai scattare le soglie del loop: gli
+  attuatori intervengono solo se l'ambiente viene perturbato. Peso iniziale
+  diverso per arnia, deterministico dall'id (`zlib.crc32`, 40–55 kg). Le
+  perturbazioni (scostamento della temperatura esterna, umidità extra,
+  attività di volo, evento sciamatura) agiscono sulle CAUSE, mai sui valori
+  misurati, e arrivano dal canale `sim/` descritto sotto. Deve pubblicare sugli stessi
   topic che userebbero arnie reali con sensori fisici: è un digital
   twin intercambiabile con l'hardware, non una scorciatoia.
 - **Broker MQTT** (Eclipse Mosquitto 2): centro nervoso, pattern
@@ -105,6 +114,23 @@ Payload di `config` (JSON, tre sezioni, tutte obbligatorie):
 ```
 
 Payload di `cmd` e `state`: stringa semplice `ON` / `OFF`.
+
+#### Canale del simulatore (non parte del sistema)
+
+```
+sim/{hive_id}/perturbation/set     -> console → simulatore, QoS 1, JSON parziale
+sim/{hive_id}/perturbation/state   -> simulatore conferma lo stato completo, retained
+sim/{hive_id}/event                -> console → simulatore, QoS 1, {"type": "swarm"}
+```
+
+Serve solo a pilotare l'ambiente simulato (demo e test): con arnie reali
+non esiste, perché meteo e colonia non si comandano. Per questo vive sotto
+`sim/` e non sotto `apiary/`: ingestion, control loop e Grafana non lo
+sottoscrivono e non devono farlo. Payload di `set`/`state`:
+`{"ext_temp_offset": -20..20, "humidity_offset": 0..30, "flight_factor": 0..1}`
+(in `set` basta un sottoinsieme dei campi; i valori fuori intervallo vengono
+limitati, campi sconosciuti ignorati). Unico consumatore lato Node-RED: la
+tab "Scenarios" (console).
 
 QoS: telemetria a 0 (fire-and-forget, va bene perdere una lettura ogni
 tanto), comandi agli attuatori a 1 (almeno una consegna; il comando è
@@ -203,5 +229,24 @@ registra un Last Will `offline` (retained) e pubblica `online`
   sulla stessa connessione MQTT 3.1.1 fanno consegnare a Mosquitto ogni
   messaggio due volte. Console scenari, anomaly detection e alert NON ancora
   presenti.
+- **Step 8 — completato**: perturbazioni del simulatore e console web.
+  Simulatore: fisica ricalibrata (termoregolazione della colonia, rumore
+  ridotto, fan che abbassa l'umidità di 13 punti, peso iniziale per arnia da
+  `zlib.crc32`), perturbazioni per arnia via `sim/{hive_id}/perturbation/set`
+  (merge parziale + clamp) con stato retained su `.../perturbation/state`
+  pubblicato anche all'avvio, evento `swarm` su `sim/{hive_id}/event` (−2.5 kg
+  in 3 tick), dispatch dei messaggi per topic. Node-RED: aggiunto
+  `@flowfuse/node-red-dashboard` 1.33.0 (Dashboard 2.0); tab "Scenarios" con
+  pagina "Scenari" su http://localhost:1880/dashboard — selettore arnia
+  popolato da `apiary/+/status`, tre slider che inviano il solo campo
+  modificato al rilascio, cinque preset che inviano l'oggetto completo più
+  "Sciamatura", tabella di stato delle arnie online. Gli slider seguono lo
+  stato retained dell'arnia e hanno il passthrough disattivato, quindi non
+  rimandano mai un set (nessun loop di feedback). Le sottoscrizioni della tab
+  usano filtri identici a quelli delle altre tab o disgiunti (stesso motivo
+  dello Step 7). Comportamento emerso da tenere presente: con "Umidità
+  persistente" il fan resta richiesto, raffredda la covata sotto la soglia
+  dell'heater e i due attuatori si alternano (priorità all'heater), mentre
+  l'umidità resta sopra 75 %. Anomaly detection e alert NON ancora presenti.
 - **Step successivo**: da concordare con lo sviluppatore — non
   procedere senza il suo via libera esplicito.

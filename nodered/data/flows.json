@@ -482,5 +482,807 @@
                 "a1f3b5d7c9e20468"
             ]
         ]
+    },
+    {
+        "id": "c8a0000000000001",
+        "type": "tab",
+        "label": "Scenarios",
+        "disabled": false,
+        "info": "Web console (http://localhost:1880/dashboard) that perturbs the SIMULATED environment over sim/{hive_id}/... It never touches apiary/ topics: with real hives this tab would not exist.",
+        "env": []
+    },
+    {
+        "id": "c8b0000000000001",
+        "type": "ui-base",
+        "name": "Smart Beehive",
+        "path": "/dashboard",
+        "appIcon": "",
+        "includeClientData": true,
+        "acceptsClientConfig": [
+            "ui-notification",
+            "ui-control"
+        ],
+        "showPathInSidebar": false,
+        "headerContent": "page",
+        "navigationStyle": "default",
+        "titleBarStyle": "default",
+        "showReconnectNotification": true,
+        "notificationDisplayTime": 1,
+        "showDisconnectNotification": true,
+        "allowInstall": false
+    },
+    {
+        "id": "c8b0000000000002",
+        "type": "ui-theme",
+        "name": "Default Theme",
+        "colors": {
+            "surface": "#fcfcfd",
+            "primary": "#0d74ce",
+            "bgPage": "#f9f9fb",
+            "groupBg": "#ffffff",
+            "groupOutline": "#d9d9e0"
+        },
+        "sizes": {
+            "density": "default",
+            "pagePadding": "12px",
+            "groupGap": "12px",
+            "groupBorderRadius": "4px",
+            "widgetGap": "12px"
+        }
+    },
+    {
+        "id": "c8b0000000000003",
+        "type": "ui-page",
+        "name": "Scenari",
+        "ui": "c8b0000000000001",
+        "path": "/scenari",
+        "icon": "home",
+        "layout": "grid",
+        "theme": "c8b0000000000002",
+        "breakpoints": [
+            {
+                "name": "Default",
+                "px": 0,
+                "cols": 3
+            },
+            {
+                "name": "Tablet",
+                "px": 576,
+                "cols": 6
+            },
+            {
+                "name": "Small Desktop",
+                "px": 768,
+                "cols": 9
+            },
+            {
+                "name": "Desktop",
+                "px": 1024,
+                "cols": 12
+            }
+        ],
+        "tabs": [],
+        "order": 1,
+        "className": "",
+        "visible": "true",
+        "disabled": "false"
+    },
+    {
+        "id": "c8b0000000000004",
+        "type": "ui-group",
+        "name": "Arnia e perturbazioni",
+        "page": "c8b0000000000003",
+        "width": 6,
+        "height": 1,
+        "order": 1,
+        "showTitle": true,
+        "className": "",
+        "visible": true,
+        "disabled": false,
+        "groupType": "default",
+        "tab": ""
+    },
+    {
+        "id": "c8b0000000000005",
+        "type": "ui-group",
+        "name": "Scenari",
+        "page": "c8b0000000000003",
+        "width": 6,
+        "height": 1,
+        "order": 2,
+        "showTitle": true,
+        "className": "",
+        "visible": true,
+        "disabled": false,
+        "groupType": "default",
+        "tab": ""
+    },
+    {
+        "id": "c8b0000000000006",
+        "type": "ui-group",
+        "name": "Stato delle arnie online",
+        "page": "c8b0000000000003",
+        "width": 12,
+        "height": 1,
+        "order": 3,
+        "showTitle": true,
+        "className": "",
+        "visible": true,
+        "disabled": false,
+        "groupType": "default",
+        "tab": ""
+    },
+    {
+        "id": "c8a0000000000010",
+        "type": "mqtt in",
+        "z": "c8a0000000000001",
+        "name": "",
+        "topic": "apiary/+/status",
+        "qos": "1",
+        "datatype": "utf8",
+        "broker": "e75965ed0fac5596",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 190,
+        "y": 100,
+        "wires": [
+            [
+                "c8a0000000000014"
+            ]
+        ]
+    },
+    {
+        "id": "c8a0000000000011",
+        "type": "mqtt in",
+        "z": "c8a0000000000001",
+        "name": "",
+        "topic": "apiary/+/actuators/+/state",
+        "qos": "1",
+        "datatype": "utf8",
+        "broker": "e75965ed0fac5596",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 190,
+        "y": 160,
+        "wires": [
+            [
+                "c8a0000000000014"
+            ]
+        ]
+    },
+    {
+        "id": "c8a0000000000012",
+        "type": "mqtt in",
+        "z": "c8a0000000000001",
+        "name": "",
+        "topic": "apiary/+/sensors/#",
+        "qos": "0",
+        "datatype": "json",
+        "broker": "e75965ed0fac5596",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 190,
+        "y": 220,
+        "wires": [
+            [
+                "c8a0000000000014"
+            ]
+        ]
+    },
+    {
+        "id": "c8a0000000000013",
+        "type": "mqtt in",
+        "z": "c8a0000000000001",
+        "name": "",
+        "topic": "sim/+/perturbation/state",
+        "qos": "1",
+        "datatype": "json",
+        "broker": "e75965ed0fac5596",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 190,
+        "y": 280,
+        "wires": [
+            [
+                "c8a0000000000014"
+            ]
+        ]
+    },
+    {
+        "id": "c8a0000000000014",
+        "type": "function",
+        "z": "c8a0000000000001",
+        "name": "hive state",
+        "func": "// One store for everything the console shows, keyed by hive id (flow context \"hives\").\nconst parts = msg.topic.split(\"/\");\nconst id = parts[1];\nconst hives = flow.get(\"hives\") || {};\nconst hive = hives[id] = hives[id] || {};\nlet selected = flow.get(\"selected\") || null;\nlet optionsChanged = false;\nlet syncSliders = false;\n\nif (parts[0] === \"apiary\" && parts.length === 3 && parts[2] === \"status\") {\n    const online = msg.payload === \"online\";\n    optionsChanged = hive.online !== online;\n    hive.online = online;\n} else if (parts[0] === \"apiary\" && parts.length === 5 && parts[4] === \"state\") {\n    hive[parts[3]] = msg.payload;\n} else if (parts[0] === \"apiary\" && parts[2] === \"sensors\") {\n    if ((parts[3] !== \"brood_temp\" && parts[3] !== \"humidity\") || !msg.payload ||\n        typeof msg.payload.value !== \"number\") {\n        return null;\n    }\n    hive[parts[3]] = msg.payload.value;\n} else if (parts[0] === \"sim\" && parts[3] === \"state\" && msg.payload && typeof msg.payload === \"object\") {\n    // The hive's own (retained) answer is the only source of truth for the sliders\n    hive.perturbation = msg.payload;\n    syncSliders = id === selected;\n} else {\n    return null;\n}\nflow.set(\"hives\", hives);\n\nconst online = Object.keys(hives).filter((k) => hives[k].online).sort();\nif (!online.includes(selected)) {\n    selected = online[0] || null;\n    flow.set(\"selected\", selected);\n    optionsChanged = true;\n    syncSliders = true;\n}\n\nconst signed = (v) => (v > 0 ? \"+\" : \"\") + v;\nconst rows = online.map((k) => {\n    const h = hives[k];\n    const p = h.perturbation || {};\n    return {\n        hive: k,\n        ext_temp_offset: p.ext_temp_offset === undefined ? \"?\" : `${signed(p.ext_temp_offset)} °C`,\n        humidity_offset: p.humidity_offset === undefined ? \"?\" : signed(p.humidity_offset),\n        flight_factor: p.flight_factor === undefined ? \"?\" : `${Math.round(p.flight_factor * 100)} %`,\n        heater: h.heater || \"?\",\n        fan: h.fan || \"?\",\n        brood_temp: h.brood_temp === undefined ? \"?\" : `${h.brood_temp.toFixed(1)} °C`,\n        humidity: h.humidity === undefined ? \"?\" : `${h.humidity.toFixed(1)} %`\n    };\n});\n\nreturn [\n    optionsChanged ? { ui_update: { options: online }, payload: selected } : null,\n    syncSliders ? { payload: selected } : null,\n    { payload: rows }\n];",
+        "outputs": 3,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 470,
+        "y": 190,
+        "wires": [
+            [
+                "c8a0000000000020"
+            ],
+            [
+                "c8a0000000000022"
+            ],
+            [
+                "c8a0000000000040"
+            ]
+        ]
+    },
+    {
+        "id": "c8a0000000000020",
+        "type": "ui-dropdown",
+        "z": "c8a0000000000001",
+        "group": "c8b0000000000004",
+        "name": "",
+        "label": "Arnia",
+        "tooltip": "",
+        "order": 1,
+        "width": 0,
+        "height": 0,
+        "passthru": false,
+        "multiple": false,
+        "chips": false,
+        "clearable": false,
+        "options": [],
+        "payload": "",
+        "topic": "topic",
+        "topicType": "msg",
+        "className": "",
+        "typeIsComboBox": false,
+        "msgTrigger": "onChange",
+        "x": 690,
+        "y": 120,
+        "wires": [
+            [
+                "c8a0000000000021"
+            ]
+        ]
+    },
+    {
+        "id": "c8a0000000000021",
+        "type": "function",
+        "z": "c8a0000000000001",
+        "name": "select hive",
+        "func": "flow.set(\"selected\", msg.payload || null);\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 690,
+        "y": 180,
+        "wires": [
+            [
+                "c8a0000000000022"
+            ]
+        ]
+    },
+    {
+        "id": "c8a0000000000022",
+        "type": "function",
+        "z": "c8a0000000000001",
+        "name": "sync sliders",
+        "func": "// Moves the sliders to the state reported by the selected hive. The sliders have\n// passthrough off, so a value set from here is displayed but never sent back as a \"set\".\nconst hive = (flow.get(\"hives\") || {})[flow.get(\"selected\")] || {};\nconst p = Object.assign({ ext_temp_offset: 0, humidity_offset: 0, flight_factor: 1 }, hive.perturbation);\nreturn [\n    { payload: p.ext_temp_offset },\n    { payload: p.humidity_offset },\n    { payload: Math.round(p.flight_factor * 100) }\n];",
+        "outputs": 3,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 700,
+        "y": 260,
+        "wires": [
+            [
+                "c8a0000000000023"
+            ],
+            [
+                "c8a0000000000024"
+            ],
+            [
+                "c8a0000000000025"
+            ]
+        ]
+    },
+    {
+        "id": "c8a0000000000023",
+        "type": "ui-slider",
+        "z": "c8a0000000000001",
+        "group": "c8b0000000000004",
+        "name": "",
+        "label": "Temperatura esterna (scostamento, °C)",
+        "tooltip": "",
+        "order": 2,
+        "width": 0,
+        "height": 0,
+        "passthru": false,
+        "outs": "end",
+        "topic": "ext_temp_offset",
+        "topicType": "str",
+        "thumbLabel": "always",
+        "showTicks": "false",
+        "min": -20,
+        "max": 20,
+        "step": 1,
+        "className": "",
+        "iconPrepend": "",
+        "iconAppend": "",
+        "color": "",
+        "colorTrack": "",
+        "colorThumb": "",
+        "showTextField": false,
+        "x": 1010,
+        "y": 220,
+        "wires": [
+            [
+                "c8a0000000000030"
+            ]
+        ]
+    },
+    {
+        "id": "c8a0000000000024",
+        "type": "ui-slider",
+        "z": "c8a0000000000001",
+        "group": "c8b0000000000004",
+        "name": "",
+        "label": "Umidità interna extra (punti)",
+        "tooltip": "",
+        "order": 3,
+        "width": 0,
+        "height": 0,
+        "passthru": false,
+        "outs": "end",
+        "topic": "humidity_offset",
+        "topicType": "str",
+        "thumbLabel": "always",
+        "showTicks": "false",
+        "min": 0,
+        "max": 30,
+        "step": 1,
+        "className": "",
+        "iconPrepend": "",
+        "iconAppend": "",
+        "color": "",
+        "colorTrack": "",
+        "colorThumb": "",
+        "showTextField": false,
+        "x": 1010,
+        "y": 260,
+        "wires": [
+            [
+                "c8a0000000000030"
+            ]
+        ]
+    },
+    {
+        "id": "c8a0000000000025",
+        "type": "ui-slider",
+        "z": "c8a0000000000001",
+        "group": "c8b0000000000004",
+        "name": "",
+        "label": "Attività di volo (%)",
+        "tooltip": "",
+        "order": 4,
+        "width": 0,
+        "height": 0,
+        "passthru": false,
+        "outs": "end",
+        "topic": "flight_factor",
+        "topicType": "str",
+        "thumbLabel": "always",
+        "showTicks": "false",
+        "min": 0,
+        "max": 100,
+        "step": 5,
+        "className": "",
+        "iconPrepend": "",
+        "iconAppend": "",
+        "color": "",
+        "colorTrack": "",
+        "colorThumb": "",
+        "showTextField": false,
+        "x": 1010,
+        "y": 300,
+        "wires": [
+            [
+                "c8a0000000000030"
+            ]
+        ]
+    },
+    {
+        "id": "c8a0000000000031",
+        "type": "ui-button",
+        "z": "c8a0000000000001",
+        "group": "c8b0000000000005",
+        "name": "",
+        "label": "Normale",
+        "order": 1,
+        "width": 3,
+        "height": 1,
+        "emulateClick": false,
+        "tooltip": "",
+        "color": "",
+        "bgcolor": "",
+        "className": "",
+        "icon": "",
+        "iconPosition": "left",
+        "payload": "{\"ext_temp_offset\": 0, \"humidity_offset\": 0, \"flight_factor\": 1}",
+        "payloadType": "json",
+        "topic": "preset",
+        "topicType": "str",
+        "buttonColor": "",
+        "textColor": "",
+        "iconColor": "",
+        "enableClick": true,
+        "enablePointerdown": false,
+        "pointerdownPayload": "",
+        "pointerdownPayloadType": "str",
+        "enablePointerup": false,
+        "pointerupPayload": "",
+        "pointerupPayloadType": "str",
+        "x": 1010,
+        "y": 360,
+        "wires": [
+            [
+                "c8a0000000000030"
+            ]
+        ]
+    },
+    {
+        "id": "c8a0000000000032",
+        "type": "ui-button",
+        "z": "c8a0000000000001",
+        "group": "c8b0000000000005",
+        "name": "",
+        "label": "Ondata di freddo",
+        "order": 2,
+        "width": 3,
+        "height": 1,
+        "emulateClick": false,
+        "tooltip": "",
+        "color": "",
+        "bgcolor": "",
+        "className": "",
+        "icon": "",
+        "iconPosition": "left",
+        "payload": "{\"ext_temp_offset\": -15, \"humidity_offset\": 0, \"flight_factor\": 1}",
+        "payloadType": "json",
+        "topic": "preset",
+        "topicType": "str",
+        "buttonColor": "",
+        "textColor": "",
+        "iconColor": "",
+        "enableClick": true,
+        "enablePointerdown": false,
+        "pointerdownPayload": "",
+        "pointerdownPayloadType": "str",
+        "enablePointerup": false,
+        "pointerupPayload": "",
+        "pointerupPayloadType": "str",
+        "x": 1010,
+        "y": 400,
+        "wires": [
+            [
+                "c8a0000000000030"
+            ]
+        ]
+    },
+    {
+        "id": "c8a0000000000033",
+        "type": "ui-button",
+        "z": "c8a0000000000001",
+        "group": "c8b0000000000005",
+        "name": "",
+        "label": "Ondata di caldo",
+        "order": 3,
+        "width": 3,
+        "height": 1,
+        "emulateClick": false,
+        "tooltip": "",
+        "color": "",
+        "bgcolor": "",
+        "className": "",
+        "icon": "",
+        "iconPosition": "left",
+        "payload": "{\"ext_temp_offset\": 15, \"humidity_offset\": 0, \"flight_factor\": 1}",
+        "payloadType": "json",
+        "topic": "preset",
+        "topicType": "str",
+        "buttonColor": "",
+        "textColor": "",
+        "iconColor": "",
+        "enableClick": true,
+        "enablePointerdown": false,
+        "pointerdownPayload": "",
+        "pointerdownPayloadType": "str",
+        "enablePointerup": false,
+        "pointerupPayload": "",
+        "pointerupPayloadType": "str",
+        "x": 1010,
+        "y": 440,
+        "wires": [
+            [
+                "c8a0000000000030"
+            ]
+        ]
+    },
+    {
+        "id": "c8a0000000000034",
+        "type": "ui-button",
+        "z": "c8a0000000000001",
+        "group": "c8b0000000000005",
+        "name": "",
+        "label": "Umidità persistente",
+        "order": 4,
+        "width": 3,
+        "height": 1,
+        "emulateClick": false,
+        "tooltip": "",
+        "color": "",
+        "bgcolor": "",
+        "className": "",
+        "icon": "",
+        "iconPosition": "left",
+        "payload": "{\"ext_temp_offset\": 0, \"humidity_offset\": 30, \"flight_factor\": 1}",
+        "payloadType": "json",
+        "topic": "preset",
+        "topicType": "str",
+        "buttonColor": "",
+        "textColor": "",
+        "iconColor": "",
+        "enableClick": true,
+        "enablePointerdown": false,
+        "pointerdownPayload": "",
+        "pointerdownPayloadType": "str",
+        "enablePointerup": false,
+        "pointerupPayload": "",
+        "pointerupPayloadType": "str",
+        "x": 1010,
+        "y": 480,
+        "wires": [
+            [
+                "c8a0000000000030"
+            ]
+        ]
+    },
+    {
+        "id": "c8a0000000000035",
+        "type": "ui-button",
+        "z": "c8a0000000000001",
+        "group": "c8b0000000000005",
+        "name": "",
+        "label": "Colonia debole",
+        "order": 5,
+        "width": 3,
+        "height": 1,
+        "emulateClick": false,
+        "tooltip": "",
+        "color": "",
+        "bgcolor": "",
+        "className": "",
+        "icon": "",
+        "iconPosition": "left",
+        "payload": "{\"ext_temp_offset\": 0, \"humidity_offset\": 0, \"flight_factor\": 0.05}",
+        "payloadType": "json",
+        "topic": "preset",
+        "topicType": "str",
+        "buttonColor": "",
+        "textColor": "",
+        "iconColor": "",
+        "enableClick": true,
+        "enablePointerdown": false,
+        "pointerdownPayload": "",
+        "pointerdownPayloadType": "str",
+        "enablePointerup": false,
+        "pointerupPayload": "",
+        "pointerupPayloadType": "str",
+        "x": 1010,
+        "y": 520,
+        "wires": [
+            [
+                "c8a0000000000030"
+            ]
+        ]
+    },
+    {
+        "id": "c8a0000000000036",
+        "type": "ui-button",
+        "z": "c8a0000000000001",
+        "group": "c8b0000000000005",
+        "name": "",
+        "label": "Sciamatura",
+        "order": 6,
+        "width": 3,
+        "height": 1,
+        "emulateClick": false,
+        "tooltip": "",
+        "color": "",
+        "bgcolor": "",
+        "className": "",
+        "icon": "",
+        "iconPosition": "left",
+        "payload": "{\"type\": \"swarm\"}",
+        "payloadType": "json",
+        "topic": "event",
+        "topicType": "str",
+        "buttonColor": "",
+        "textColor": "",
+        "iconColor": "",
+        "enableClick": true,
+        "enablePointerdown": false,
+        "pointerdownPayload": "",
+        "pointerdownPayloadType": "str",
+        "enablePointerup": false,
+        "pointerupPayload": "",
+        "pointerupPayloadType": "str",
+        "x": 1010,
+        "y": 560,
+        "wires": [
+            [
+                "c8a0000000000030"
+            ]
+        ]
+    },
+    {
+        "id": "c8a0000000000030",
+        "type": "function",
+        "z": "c8a0000000000001",
+        "name": "build sim message",
+        "func": "// Sliders send their own field only (partial set), presets the full object, \"Sciamatura\" an event.\nconst hive = flow.get(\"selected\");\nif (!hive) {\n    node.warn(\"no hive selected: nothing sent\");\n    return null;\n}\nif (msg.topic === \"event\") {\n    return { topic: `sim/${hive}/event`, payload: msg.payload };\n}\nlet payload = msg.payload;\nif (msg.topic !== \"preset\") {\n    if (typeof msg.payload !== \"number\") {\n        return null;\n    }\n    payload = { [msg.topic]: msg.topic === \"flight_factor\" ? msg.payload / 100 : msg.payload };\n}\nreturn { topic: `sim/${hive}/perturbation/set`, payload: payload };",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1280,
+        "y": 400,
+        "wires": [
+            [
+                "c8a0000000000037",
+                "c8a0000000000038"
+            ]
+        ]
+    },
+    {
+        "id": "c8a0000000000037",
+        "type": "mqtt out",
+        "z": "c8a0000000000001",
+        "name": "sim/... (QoS 1, not retained)",
+        "topic": "",
+        "qos": "1",
+        "retain": "false",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "e75965ed0fac5596",
+        "x": 1540,
+        "y": 400,
+        "wires": []
+    },
+    {
+        "id": "c8a0000000000038",
+        "type": "debug",
+        "z": "c8a0000000000001",
+        "name": "sim messages (disabled)",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1530,
+        "y": 460,
+        "wires": []
+    },
+    {
+        "id": "c8a0000000000040",
+        "type": "ui-table",
+        "z": "c8a0000000000001",
+        "group": "c8b0000000000006",
+        "name": "",
+        "label": "",
+        "order": 1,
+        "width": 0,
+        "height": 0,
+        "maxrows": 0,
+        "passthru": false,
+        "autocols": false,
+        "showSearch": false,
+        "deselect": true,
+        "selectionType": "none",
+        "columns": [
+            {
+                "title": "Arnia",
+                "key": "hive",
+                "keyType": "key",
+                "type": "text",
+                "width": "",
+                "align": "start"
+            },
+            {
+                "title": "Temp. esterna",
+                "key": "ext_temp_offset",
+                "keyType": "key",
+                "type": "text",
+                "width": "",
+                "align": "start"
+            },
+            {
+                "title": "Umidità extra",
+                "key": "humidity_offset",
+                "keyType": "key",
+                "type": "text",
+                "width": "",
+                "align": "start"
+            },
+            {
+                "title": "Voli",
+                "key": "flight_factor",
+                "keyType": "key",
+                "type": "text",
+                "width": "",
+                "align": "start"
+            },
+            {
+                "title": "Heater",
+                "key": "heater",
+                "keyType": "key",
+                "type": "text",
+                "width": "",
+                "align": "start"
+            },
+            {
+                "title": "Fan",
+                "key": "fan",
+                "keyType": "key",
+                "type": "text",
+                "width": "",
+                "align": "start"
+            },
+            {
+                "title": "Covata",
+                "key": "brood_temp",
+                "keyType": "key",
+                "type": "text",
+                "width": "",
+                "align": "start"
+            },
+            {
+                "title": "Umidità",
+                "key": "humidity",
+                "keyType": "key",
+                "type": "text",
+                "width": "",
+                "align": "start"
+            }
+        ],
+        "mobileBreakpoint": "sm",
+        "mobileBreakpointType": "defaults",
+        "action": "replace",
+        "className": "",
+        "x": 690,
+        "y": 340,
+        "wires": [
+            []
+        ]
     }
 ]

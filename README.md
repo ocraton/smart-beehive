@@ -198,3 +198,63 @@ file, publish a retained config by hand; the loop adapts on the next reading
 docker compose exec mosquitto mosquitto_pub -q 1 -r -t apiary/hive-01/config -m \
   '{"heater":{"on_below":29.5,"off_above":31.0},"fan_temp":{"on_above":36.0,"off_below":34.5},"fan_humidity":{"on_above":75.0,"off_below":65.0}}'
 ```
+
+## Step 8 verification
+
+The simulator accepts **perturbations of the simulated environment** (weather,
+moisture sources, colony activity). They are causes, never measured values: the
+readings change only because the simulated physics reacts. The channel lives
+under `sim/`, outside `apiary/`, so ingestion, control loop and Grafana do not
+see it; with real hives it would not exist.
+
+| Field             | Range      | Effect                                                        |
+|-------------------|------------|---------------------------------------------------------------|
+| `ext_temp_offset` | -20 .. +20 | added to the outside temperature (also moves `ext_hum`, flights) |
+| `humidity_offset` | 0 .. +30   | added to the target of the internal humidity                  |
+| `flight_factor`   | 0 .. 1     | multiplies the flight count                                   |
+
+**Console:** http://localhost:1880/dashboard (Node-RED Dashboard 2.0, tab
+"Scenarios"). Pick a hive, then move a slider (sends only that field when
+released) or click a preset (sends the full object, so it replaces the previous
+one). The sliders always show the state reported by the hive, and the table at
+the bottom shows perturbations, actuators and last readings of every online hive.
+
+| Preset              | ext_temp_offset | humidity_offset | flight_factor | What to expect                              |
+|---------------------|-----------------|-----------------|---------------|---------------------------------------------|
+| Normale             | 0               | 0               | 1             | no actuator commands                        |
+| Ondata di freddo    | -15             | 0               | 1             | brood cools down, the heater cycles         |
+| Ondata di caldo     | +15             | 0               | 1             | brood overheats, the fan cycles             |
+| Umidità persistente | 0               | +30             | 1             | humidity stays above 75 % despite the fan   |
+| Colonia debole      | 0               | 0               | 0.05          | flights close to zero in good weather       |
+| Sciamatura          | —               | —               | —             | one-off event: weight drops ~2.5 kg in 3 ticks |
+
+Heater and fan react only while the perturbed outside temperature is outside
+the colony's comfort band (10 – 28 °C), so around the warmest (cold wave) or
+coldest (heat wave) hours of the simulated day they pause: depending on the
+simulated time, the first command arrives after a few seconds or up to ~3 minutes.
+
+The same without the console:
+
+```bash
+# current perturbations (retained, one per hive)
+docker compose exec mosquitto mosquitto_sub -v -t 'sim/+/perturbation/state'
+
+# partial update: only the given fields change, out-of-range values are clamped
+docker compose exec mosquitto mosquitto_pub -q 1 -t sim/hive-01/perturbation/set \
+  -m '{"ext_temp_offset": -15}'
+
+# back to normal
+docker compose exec mosquitto mosquitto_pub -q 1 -t sim/hive-01/perturbation/set \
+  -m '{"ext_temp_offset": 0, "humidity_offset": 0, "flight_factor": 1}'
+
+# swarm event
+docker compose exec mosquitto mosquitto_pub -q 1 -t sim/hive-01/event -m '{"type": "swarm"}'
+
+# watch the control loop react
+docker compose exec mosquitto mosquitto_sub -v \
+  -t 'apiary/+/actuators/+/cmd' -t 'apiary/+/sensors/brood_temp'
+```
+
+With no perturbation the colony keeps the brood at about 34.3 °C by itself and
+no actuator command is sent. Restarting the simulator
+(`docker compose restart simulator`) resets every perturbation to its default.
