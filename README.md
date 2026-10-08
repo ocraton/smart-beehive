@@ -36,7 +36,7 @@ sudo chown -R 1000:1000 nodered/data
 | simulator | —                       | publishes telemetry for `HIVE_IDS`         |
 | influxdb  | http://localhost:8086   | login with `INFLUXDB_USERNAME`/`PASSWORD`  |
 | nodered   | http://localhost:1880   | flows saved to `nodered/data/flows.json`   |
-| grafana   | http://localhost:3000   | login with `GRAFANA_ADMIN_USER`/`PASSWORD` |
+| grafana   | http://localhost:3000   | Apiary dashboard, no login (anonymous viewer) |
 
 ## Verification
 
@@ -119,3 +119,29 @@ from(bucket: "beehive")
   |> range(start: -15m)
   |> filter(fn: (r) => r._measurement == "telemetry" and r.sensor == "brood_temp")
 ```
+
+## Step 6 verification
+
+The **Apiary** dashboard is provisioned as code
+(`grafana/provisioning/dashboards/apiary.json`, loaded by the provider in
+`dashboards.yaml` into the "Smart Beehive" folder). It is also the home
+dashboard, and anonymous access is enabled with the read-only `Viewer` role, so
+no login is needed. This is meant for the local demo only: remove the
+`GF_AUTH_ANONYMOUS_*` variables in a real deployment.
+
+```bash
+docker compose up -d
+# anonymous access: expect HTTP 200, no credentials
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/api/dashboards/uid/apiary
+```
+
+Open http://localhost:3000: the Apiary dashboard opens by itself, with the last
+30 minutes of data refreshed every 5 seconds. Each panel shows one series per
+hive.
+
+- **Hive selector**: the `Arnia` drop-down at the top (variable `hive_id`) is
+  filled from the `hive_id` tag values stored in InfluxDB. Pick one hive,
+  several, or `All`; a new hive appears after reloading the page.
+- **Editing the dashboard**: changes made in the UI cannot be saved
+  (`allowUiUpdates: false`). Edit `apiary.json` instead: Grafana reloads it
+  within 30 seconds, no restart needed.

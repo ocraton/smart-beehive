@@ -158,5 +158,16 @@ registra un Last Will `offline` (retained) e pubblica `online`
   uid fisso `influxdb-beehive`, linguaggio Flux, token passato solo via
   variabile d'ambiente (mai in file versionati). Nessuna dashboard ancora.
   Verificati health della data source e una query Flux su `brood_temp`.
+- **Step 6 — completato**: dashboard Grafana "Apiary" (uid `apiary`)
+  provisioned come codice in `grafana/provisioning/dashboards/` (provider
+  `dashboards.yaml` + `apiary.json`, cartella "Smart Beehive", non
+  modificabile da UI: si modifica il JSON e Grafana lo ricarica entro 30 s).
+  Variabile `hive_id` (multi-value + All) popolata da `schema.tagValues`;
+  pannelli time series per i 6 sensori con `aggregateWindow(every:
+  v.windowPeriod)` e filtro `${hive_id:json}`, più 4 stat con l'ultimo valore
+  per arnia, senza soglie colorate (arriveranno dal config del control loop).
+  Impostata come home dashboard, con accesso anonimo `Viewer` pensato solo per
+  la demo locale. Stato attuatori e alert NON ancora presenti in dashboard
+  perché non ancora scritti in InfluxDB.
 - **Step successivo**: da concordare con lo sviluppatore — non
   procedere senza il suo via libera esplicito.

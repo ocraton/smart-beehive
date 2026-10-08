@@ -74,6 +74,10 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?copy .env.example to .env}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?copy .env.example to .env}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/apiary.json
+      # Anonymous read-only access, meant for the local demo: disable in a real deployment
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
       TZ: ${TZ:-Europe/Rome}
       # Only used to interpolate grafana/provisioning/datasources/influxdb.yaml
       INFLUXDB_ORG: ${INFLUXDB_ORG:?copy .env.example to .env}

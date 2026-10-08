@@ -1,0 +1,10 @@
+apiVersion: 1
+providers:
+  - name: beehive
+    folder: Smart Beehive
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards
