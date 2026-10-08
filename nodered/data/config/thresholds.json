@@ -1,0 +1,10 @@
+{
+  "defaults": {
+    "heater":       { "on_below": 32.0, "off_above": 33.5 },
+    "fan_temp":     { "on_above": 36.0, "off_below": 34.5 },
+    "fan_humidity": { "on_above": 75.0, "off_below": 65.0 }
+  },
+  "hives": {
+    "hive-02": { "heater": { "on_below": 31.5, "off_above": 33.0 } }
+  }
+}

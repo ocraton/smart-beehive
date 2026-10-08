@@ -145,3 +145,56 @@ hive.
 - **Editing the dashboard**: changes made in the UI cannot be saved
   (`allowUiUpdates: false`). Edit `apiary.json` instead: Grafana reloads it
   within 30 seconds, no restart needed.
+
+## Step 7 verification
+
+Node-RED runs the heater/fan control loop. The thresholds live in
+`nodered/data/config/thresholds.json` (`defaults` plus optional per-hive
+overrides under `hives`, merged per section and field by field).
+
+- Tab **Config**: when a hive reports `online`, its merged thresholds are
+  published as a retained message on `apiary/{hive_id}/config`.
+- Tab **Control**: for every `brood_temp` / `humidity` reading it applies the
+  thresholds with hysteresis and sends `ON` / `OFF` on
+  `apiary/{hive_id}/actuators/{heater|fan}/cmd` (QoS 1, not retained) only when
+  the desired state differs from the one the hive confirmed on `.../state`.
+  The heater has priority: the fan never runs while the heater is on.
+- Tab **Ingestion**: every confirmed state is also written to InfluxDB
+  (measurement `actuator`, tags `hive_id` + `actuator`, field `state` 1/0) and
+  shown in the **Attuatori** row of the Grafana dashboard.
+
+```bash
+docker compose up -d --build
+
+# thresholds in use: one retained message per online hive
+docker compose exec mosquitto mosquitto_sub -v -t 'apiary/+/config'
+
+# commands, confirmed states and the temperature that drives them
+docker compose exec mosquitto mosquitto_sub -v \
+  -t 'apiary/+/actuators/+/cmd' -t 'apiary/+/actuators/+/state' \
+  -t 'apiary/+/sensors/brood_temp'
+```
+
+Expected: the heater gets `ON` when `brood_temp` drops below `heater.on_below`
+and `OFF` when it rises above `heater.off_above`; in between nothing is sent.
+Each `cmd` is followed by a matching `state`, and no command is sent while the
+confirmed state already matches. `hive-02` switches at 31.5 / 33.0 instead of
+32.0 / 33.5 because of its override.
+
+**Changing the thresholds:** edit `nodered/data/config/thresholds.json`, then
+
+```bash
+docker compose restart nodered
+```
+
+Node-RED reads the file again and republishes the config of every online hive.
+A config whose thresholds are inconsistent (for example `on_below` not lower
+than `off_above`) is not published and a warning appears in
+`docker compose logs nodered`. To try other thresholds without touching the
+file, publish a retained config by hand; the loop adapts on the next reading
+(it lasts until the next Node-RED restart):
+
+```bash
+docker compose exec mosquitto mosquitto_pub -q 1 -r -t apiary/hive-01/config -m \
+  '{"heater":{"on_below":29.5,"off_above":31.0},"fan_temp":{"on_above":36.0,"off_below":34.5},"fan_humidity":{"on_above":75.0,"off_below":65.0}}'
+```

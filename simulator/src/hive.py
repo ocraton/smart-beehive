@@ -54,26 +54,29 @@ class Hive:
 
         # Publish online status
         self.mqtt.publish(will_topic, "online", qos=1, retain=True)
+
+        # Publish the real initial actuator state, so subscribers never see a stale retained one
+        self._publish_actuator_state("heater")
+        self._publish_actuator_state("fan")
         logger.info(f"Hive {self.hive_id} initialized and online")
+
+    def _publish_actuator_state(self, name):
+        is_on = self.heater_on if name == "heater" else self.fan_on
+        self.mqtt.publish(
+            f"apiary/{self.hive_id}/actuators/{name}/state",
+            "ON" if is_on else "OFF",
+            qos=1,
+            retain=True,
+        )
 
     def _on_mqtt_message(self, topic, payload):
         if "heater/cmd" in topic:
             self.heater_on = payload.upper() == "ON"
-            self.mqtt.publish(
-                f"apiary/{self.hive_id}/actuators/heater/state",
-                "ON" if self.heater_on else "OFF",
-                qos=1,
-                retain=True,
-            )
+            self._publish_actuator_state("heater")
             logger.info(f"Hive {self.hive_id} heater set to {self.heater_on}")
         elif "fan/cmd" in topic:
             self.fan_on = payload.upper() == "ON"
-            self.mqtt.publish(
-                f"apiary/{self.hive_id}/actuators/fan/state",
-                "ON" if self.fan_on else "OFF",
-                qos=1,
-                retain=True,
-            )
+            self._publish_actuator_state("fan")
             logger.info(f"Hive {self.hive_id} fan set to {self.fan_on}")
 
     def tick(self, sim_minutes_per_tick):

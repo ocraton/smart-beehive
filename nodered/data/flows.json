@@ -145,5 +145,342 @@
         "x": 700,
         "y": 180,
         "wires": []
+    },
+    {
+        "id": "c7a0000000000001",
+        "type": "tab",
+        "label": "Config",
+        "disabled": false,
+        "info": "Publishes the thresholds of every hive that reports online as a retained message on apiary/{hive_id}/config (defaults + per-hive overrides from /data/config/thresholds.json).",
+        "env": []
+    },
+    {
+        "id": "c7a0000000000002",
+        "type": "mqtt in",
+        "z": "c7a0000000000001",
+        "name": "",
+        "topic": "apiary/+/status",
+        "qos": "1",
+        "datatype": "utf8",
+        "broker": "e75965ed0fac5596",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 150,
+        "y": 120,
+        "wires": [
+            [
+                "c7a0000000000003"
+            ]
+        ]
+    },
+    {
+        "id": "c7a0000000000003",
+        "type": "function",
+        "z": "c7a0000000000001",
+        "name": "only online",
+        "func": "// apiary/{hive_id}/status\nconst parts = msg.topic.split(\"/\");\nif (parts.length !== 3 || msg.payload !== \"online\") {\n    return null;\n}\nmsg.hive_id = parts[1];\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 350,
+        "y": 120,
+        "wires": [
+            [
+                "c7a0000000000004"
+            ]
+        ]
+    },
+    {
+        "id": "c7a0000000000004",
+        "type": "file in",
+        "z": "c7a0000000000001",
+        "name": "thresholds.json",
+        "filename": "/data/config/thresholds.json",
+        "filenameType": "str",
+        "format": "utf8",
+        "chunk": false,
+        "sendError": false,
+        "encoding": "none",
+        "allProps": false,
+        "x": 550,
+        "y": 120,
+        "wires": [
+            [
+                "c7a0000000000005"
+            ]
+        ]
+    },
+    {
+        "id": "c7a0000000000005",
+        "type": "json",
+        "z": "c7a0000000000001",
+        "name": "",
+        "property": "payload",
+        "action": "obj",
+        "pretty": false,
+        "x": 730,
+        "y": 120,
+        "wires": [
+            [
+                "c7a0000000000006"
+            ]
+        ]
+    },
+    {
+        "id": "c7a0000000000006",
+        "type": "function",
+        "z": "c7a0000000000001",
+        "name": "merge + validate",
+        "func": "const SECTIONS = [\"heater\", \"fan_temp\", \"fan_humidity\"];\nconst file = msg.payload || {};\nconst defaults = file.defaults || {};\nconst override = (file.hives || {})[msg.hive_id] || {};\n\n// Merge per section, field by field: an override may redefine a single threshold\nconst cfg = {};\nfor (const s of SECTIONS) {\n    cfg[s] = Object.assign({}, defaults[s], override[s]);\n}\n\nconst num = (v) => typeof v === \"number\" && isFinite(v);\nconst valid =\n    num(cfg.heater.on_below) && num(cfg.heater.off_above) &&\n    cfg.heater.on_below < cfg.heater.off_above &&\n    [\"fan_temp\", \"fan_humidity\"].every((s) =>\n        num(cfg[s].on_above) && num(cfg[s].off_below) && cfg[s].off_below < cfg[s].on_above);\n\nif (!valid) {\n    node.warn(`invalid thresholds for ${msg.hive_id}, config not published: ${JSON.stringify(cfg)}`);\n    return null;\n}\nreturn { topic: `apiary/${msg.hive_id}/config`, payload: cfg };",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 910,
+        "y": 120,
+        "wires": [
+            [
+                "c7a0000000000007"
+            ]
+        ]
+    },
+    {
+        "id": "c7a0000000000007",
+        "type": "mqtt out",
+        "z": "c7a0000000000001",
+        "name": "config (retained)",
+        "topic": "",
+        "qos": "1",
+        "retain": "true",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "e75965ed0fac5596",
+        "x": 1140,
+        "y": 120,
+        "wires": []
+    },
+    {
+        "id": "c7b0000000000001",
+        "type": "tab",
+        "label": "Control",
+        "disabled": false,
+        "info": "Heater/fan control loop: thresholds with hysteresis from apiary/{hive_id}/config, commands on apiary/{hive_id}/actuators/{heater|fan}/cmd (QoS 1, not retained), repeated until the hive confirms on .../state.",
+        "env": []
+    },
+    {
+        "id": "c7b0000000000002",
+        "type": "mqtt in",
+        "z": "c7b0000000000001",
+        "name": "",
+        "topic": "apiary/+/config",
+        "qos": "1",
+        "datatype": "json",
+        "broker": "e75965ed0fac5596",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 150,
+        "y": 80,
+        "wires": [
+            [
+                "c7b0000000000003"
+            ]
+        ]
+    },
+    {
+        "id": "c7b0000000000003",
+        "type": "function",
+        "z": "c7b0000000000001",
+        "name": "store config",
+        "func": "// apiary/{hive_id}/config\nconst parts = msg.topic.split(\"/\");\nconst c = msg.payload;\nif (parts.length !== 3 || !c || !c.heater || !c.fan_temp || !c.fan_humidity) {\n    return null;\n}\nconst config = flow.get(\"config\") || {};\nconfig[parts[1]] = c;\nflow.set(\"config\", config);\nnode.status({ text: `${parts[1]} heater ${c.heater.on_below}/${c.heater.off_above}` });\nreturn null;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 400,
+        "y": 80,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "c7b0000000000004",
+        "type": "mqtt in",
+        "z": "c7b0000000000001",
+        "name": "",
+        "topic": "apiary/+/actuators/+/state",
+        "qos": "1",
+        "datatype": "utf8",
+        "broker": "e75965ed0fac5596",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 190,
+        "y": 160,
+        "wires": [
+            [
+                "c7b0000000000005"
+            ]
+        ]
+    },
+    {
+        "id": "c7b0000000000005",
+        "type": "function",
+        "z": "c7b0000000000001",
+        "name": "store confirmed state",
+        "func": "// apiary/{hive_id}/actuators/{heater|fan}/state: what the hive CONFIRMED, not what we asked for\nconst parts = msg.topic.split(\"/\");\nif (parts.length !== 5 || (msg.payload !== \"ON\" && msg.payload !== \"OFF\")) {\n    return null;\n}\nconst states = flow.get(\"states\") || {};\nstates[parts[1]] = states[parts[1]] || {};\nstates[parts[1]][parts[3]] = msg.payload;\nflow.set(\"states\", states);\nreturn null;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 430,
+        "y": 160,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "c7b0000000000006",
+        "type": "mqtt in",
+        "z": "c7b0000000000001",
+        "name": "",
+        "topic": "apiary/+/sensors/#",
+        "qos": "0",
+        "datatype": "json",
+        "broker": "e75965ed0fac5596",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 160,
+        "y": 260,
+        "wires": [
+            [
+                "c7b0000000000007"
+            ]
+        ]
+    },
+    {
+        "id": "c7b0000000000007",
+        "type": "function",
+        "z": "c7b0000000000001",
+        "name": "decide",
+        "func": "// apiary/{hive_id}/sensors/{sensor}\nconst parts = msg.topic.split(\"/\");\nif (parts.length !== 4 || !msg.payload || typeof msg.payload.value !== \"number\") {\n    return null;\n}\nconst hive = parts[1];\nconst sensor = parts[3];\nif (sensor !== \"brood_temp\" && sensor !== \"humidity\") {\n    return null;\n}\n\nconst values = flow.get(\"values\") || {};\nconst v = values[hive] = values[hive] || {};\nv[sensor] = msg.payload.value;\nflow.set(\"values\", values);\n\nconst cfg = (flow.get(\"config\") || {})[hive];\nif (!cfg) {\n    const warned = context.get(\"warned\") || {};\n    if (!warned[hive]) {\n        warned[hive] = true;\n        context.set(\"warned\", warned);\n        node.warn(`no config for ${hive} yet: control loop idle`);\n    }\n    return null;\n}\n\nconst confirmed = (flow.get(\"states\") || {})[hive] || {};\nconst allNeeds = flow.get(\"needs\") || {};\nconst needs = allNeeds[hive] = allNeeds[hive] || {};\n\n// Hysteresis with memory: a need changes only when the value leaves the band.\n// After a Node-RED restart the memory is rebuilt from the confirmed actuator state;\n// if that is unknown too, the need stays undefined until the value leaves the band.\nfunction update(name, actuator, value, turnsOn, turnsOff) {\n    if (needs[name] === undefined && confirmed[actuator] !== undefined) {\n        needs[name] = confirmed[actuator] === \"ON\";\n    }\n    if (value === undefined) {\n        return;\n    }\n    if (needs[name] !== true && turnsOn(value)) {\n        needs[name] = true;\n    } else if (needs[name] !== false && turnsOff(value)) {\n        needs[name] = false;\n    }\n}\nupdate(\"heaterNeed\", \"heater\", v.brood_temp,\n    (t) => t < cfg.heater.on_below, (t) => t > cfg.heater.off_above);\nupdate(\"fanTempNeed\", \"fan\", v.brood_temp,\n    (t) => t > cfg.fan_temp.on_above, (t) => t < cfg.fan_temp.off_below);\nupdate(\"fanHumNeed\", \"fan\", v.humidity,\n    (h) => h > cfg.fan_humidity.on_above, (h) => h < cfg.fan_humidity.off_below);\nflow.set(\"needs\", allNeeds);\n\n// Desired state. Heating wins over ventilation: a running fan would waste the heat.\nconst heater = needs.heaterNeed;\nlet fan;\nif (heater === true) {\n    fan = false;\n} else if (heater === false) {\n    if (needs.fanTempNeed === true || needs.fanHumNeed === true) {\n        fan = true;\n    } else if (needs.fanTempNeed === false && needs.fanHumNeed === false) {\n        fan = false;\n    }\n}\n\n// Command only what differs from the confirmed state. Nothing is retried on a timer:\n// while the hive has not confirmed, the next reading emits the command again.\nconst sent = context.get(\"sent\") || {};\nconst out = [];\nfor (const [actuator, want] of [[\"heater\", heater], [\"fan\", fan]]) {\n    if (want === undefined) {\n        continue;\n    }\n    const cmd = want ? \"ON\" : \"OFF\";\n    const key = `${hive}/${actuator}`;\n    if (confirmed[actuator] === cmd) {\n        delete sent[key];\n        continue;\n    }\n    // brood_temp and humidity of the same tick share \"ts\": one command per tick is enough\n    if (sent[key] && sent[key].cmd === cmd && sent[key].ts === msg.payload.ts) {\n        continue;\n    }\n    sent[key] = { cmd: cmd, ts: msg.payload.ts };\n    out.push({ topic: `apiary/${hive}/actuators/${actuator}/cmd`, payload: cmd });\n}\ncontext.set(\"sent\", sent);\n\nconst onOff = (b) => (b === undefined ? \"?\" : b ? \"ON\" : \"OFF\");\nconst t = v.brood_temp === undefined ? \"?\" : v.brood_temp.toFixed(1);\nconst h = v.humidity === undefined ? \"?\" : v.humidity.toFixed(0);\nnode.status({\n    fill: heater ? \"red\" : fan ? \"blue\" : \"grey\",\n    shape: \"dot\",\n    text: `${hive} ${t}°C ${h}% heater ${onOff(heater)} fan ${onOff(fan)}`\n});\nreturn [out];",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 390,
+        "y": 260,
+        "wires": [
+            [
+                "c7b0000000000008",
+                "c7b0000000000009"
+            ]
+        ]
+    },
+    {
+        "id": "c7b0000000000008",
+        "type": "mqtt out",
+        "z": "c7b0000000000001",
+        "name": "cmd (QoS 1, not retained)",
+        "topic": "",
+        "qos": "1",
+        "retain": "false",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "e75965ed0fac5596",
+        "x": 640,
+        "y": 260,
+        "wires": []
+    },
+    {
+        "id": "c7b0000000000009",
+        "type": "debug",
+        "z": "c7b0000000000001",
+        "name": "commands (disabled)",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 630,
+        "y": 320,
+        "wires": []
+    },
+    {
+        "id": "c7b000000000000a",
+        "type": "comment",
+        "z": "c7b0000000000001",
+        "name": "Subscribes to apiary/+/sensors/# like Ingestion (identical filter = no duplicate deliveries); decide keeps brood_temp and humidity only",
+        "info": "",
+        "x": 480,
+        "y": 220,
+        "wires": []
+    },
+    {
+        "id": "c7c0000000000001",
+        "type": "mqtt in",
+        "z": "0e6f1d69908a3eac",
+        "name": "",
+        "topic": "apiary/+/actuators/+/state",
+        "qos": "1",
+        "datatype": "utf8",
+        "broker": "e75965ed0fac5596",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 200,
+        "y": 260,
+        "wires": [
+            [
+                "c7c0000000000002"
+            ]
+        ]
+    },
+    {
+        "id": "c7c0000000000002",
+        "type": "function",
+        "z": "0e6f1d69908a3eac",
+        "name": "to actuator point",
+        "func": "// apiary/{hive_id}/actuators/{heater|fan}/state\nconst parts = msg.topic.split(\"/\");\nif (parts.length !== 5 || (msg.payload !== \"ON\" && msg.payload !== \"OFF\")) {\n    return null;\n}\n// The state payload carries no \"ts\": the write time is the best timestamp available\nmsg.payload = [{\n    measurement: \"actuator\",\n    tags:   { hive_id: parts[1], actuator: parts[3] },\n    fields: { state: msg.payload === \"ON\" ? 1.0 : 0.0 },\n    timestamp: new Date()\n}];\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 450,
+        "y": 260,
+        "wires": [
+            [
+                "a1f3b5d7c9e20468"
+            ]
+        ]
     }
 ]

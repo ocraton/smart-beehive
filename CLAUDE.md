@@ -94,9 +94,23 @@ apiary/{hive_id}/alerts                          -> anomalie rilevate
 apiary/{hive_id}/config                          -> soglie, retained
 ```
 
+Payload di `config` (JSON, tre sezioni, tutte obbligatorie):
+
+```json
+{
+  "heater":       { "on_below": 32.0, "off_above": 33.5 },
+  "fan_temp":     { "on_above": 36.0, "off_below": 34.5 },
+  "fan_humidity": { "on_above": 75.0, "off_below": 65.0 }
+}
+```
+
+Payload di `cmd` e `state`: stringa semplice `ON` / `OFF`.
+
 QoS: telemetria a 0 (fire-and-forget, va bene perdere una lettura ogni
 tanto), comandi agli attuatori a 1 (almeno una consegna; il comando è
-idempotente quindi i duplicati non sono un problema). Ogni arnia
+idempotente quindi i duplicati non sono un problema). I `cmd` sono QoS 1
+ma NON retained: un comando vecchio verrebbe riconsegnato all'arnia alla
+riconnessione, sovrascrivendo decisioni più recenti. Ogni arnia
 registra un Last Will `offline` (retained) e pubblica `online`
 (retained) alla connessione.
 
@@ -169,5 +183,25 @@ registra un Last Will `offline` (retained) e pubblica `online`
   Impostata come home dashboard, con accesso anonimo `Viewer` pensato solo per
   la demo locale. Stato attuatori e alert NON ancora presenti in dashboard
   perché non ancora scritti in InfluxDB.
+- **Step 7 — completato**: control loop heater/fan. Soglie in
+  `nodered/data/config/thresholds.json` (versionato): `defaults` + override
+  per arnia sotto `hives`, merge per sezione campo per campo. Tab "Config":
+  a ogni `online` su `apiary/+/status` rilegge il file, valida e pubblica la
+  config retained (quindi anche al riavvio di Node-RED, perché lo status è
+  retained). Tab "Control": tre bisogni a isteresi con memoria propria
+  (`heaterNeed`, `fanTempNeed`, `fanHumNeed`) in flow context, inizializzati
+  dallo stato confermato dopo un riavvio; heater ha priorità sul fan; comando
+  emesso solo se lo stato desiderato differisce da quello confermato su
+  `.../state`, e ripetuto a ogni lettura finché l'arnia non conferma (nessun
+  timer). Il simulatore pubblica lo stato iniziale OFF (retained) di entrambi
+  gli attuatori alla connessione. Stati confermati scritti in InfluxDB:
+  measurement `actuator`, tag `hive_id` e `actuator`, field `state` (1.0/0.0),
+  timestamp di scrittura. Dashboard: row "Attuatori" con state-timeline (la
+  query riporta a inizio intervallo l'ultimo stato precedente). Nota MQTT: la
+  tab Control si sottoscrive a `apiary/+/sensors/#` (stesso filtro di
+  Ingestion) e filtra nella function, perché due filtri sovrapposti ma diversi
+  sulla stessa connessione MQTT 3.1.1 fanno consegnare a Mosquitto ogni
+  messaggio due volte. Console scenari, anomaly detection e alert NON ancora
+  presenti.
 - **Step successivo**: da concordare con lo sviluppatore — non
   procedere senza il suo via libera esplicito.
