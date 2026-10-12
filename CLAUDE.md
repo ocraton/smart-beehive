@@ -54,8 +54,11 @@ Container Docker separati, orchestrati con un unico `docker-compose.yml`:
   reagire. La colonia si termoregola: senza attuatori la covata tende a
   ~34.3 °C finché la temperatura esterna resta nella banda di comfort
   (10–28 °C), e ne esce in proporzione quando fa più freddo o più caldo;
-  heater ON porta il target a 35 °C, fan ON a 30 °C. Il fan abbassa il
-  target dell'umidità interna di 13 punti (non a un valore fisso). A riposo
+  heater ON porta il target a 35 °C; fan ON abbassa di 12 °C il target che
+  la covata avrebbe senza fan, ma mai sotto un pavimento di 33.3 °C (sopra
+  le soglie dell'heater: ventilare per l'umidità non deve chiamare il
+  riscaldamento). Il fan abbassa il target dell'umidità interna di 13 punti
+  (non a un valore fisso). A riposo
   il rumore è tarato per non far mai scattare le soglie del loop: gli
   attuatori intervengono solo se l'ambiente viene perturbato. Peso iniziale
   diverso per arnia, deterministico dall'id (`zlib.crc32`, 40–55 kg). Le
@@ -103,17 +106,45 @@ apiary/{hive_id}/alerts                          -> anomalie rilevate
 apiary/{hive_id}/config                          -> soglie, retained
 ```
 
-Payload di `config` (JSON, tre sezioni, tutte obbligatorie):
+Payload di `config` (JSON, quattro sezioni, tutte obbligatorie):
 
 ```json
 {
   "heater":       { "on_below": 32.0, "off_above": 33.5 },
   "fan_temp":     { "on_above": 36.0, "off_below": 34.5 },
-  "fan_humidity": { "on_above": 75.0, "off_below": 65.0 }
+  "fan_humidity": { "on_above": 75.0, "off_below": 65.0 },
+  "anomalies": {
+    "weight_drop": { "max_drop_kg": 1.5, "window_readings": 12,
+                     "raise_after": 1, "clear_after": 1 },
+    "inactivity":  { "max_flights": 8, "min_ext_temp": 15, "max_ext_temp": 30,
+                     "max_ext_hum": 80, "raise_after": 24, "clear_after": 3 },
+    "humidity":    { "above": 75, "raise_after": 24, "clear_after": 3 }
+  }
 }
 ```
 
+Le prime tre sezioni servono al control loop, `anomalies` alle regole di
+anomaly detection; ogni tab di Node-RED legge solo le proprie.
+
 Payload di `cmd` e `state`: stringa semplice `ON` / `OFF`.
+
+Payload di `alerts` (JSON, QoS 1, NON retained: sono eventi, uno per
+transizione di stato di una regola):
+
+```json
+{
+  "rule": "weight_drop | inactivity | humidity",
+  "state": "raised | resolved",
+  "severity": "critical | warning",
+  "message": "testo in italiano per l'apicoltore",
+  "value": 1.67,
+  "ts": "2026-10-12T15:24:36Z",
+  "raised_at": "solo nei resolved: ts del raised corrispondente"
+}
+```
+
+`value` è il valore che ha determinato la transizione (kg di calo, voli,
+% di umidità); `ts` è il `ts` della lettura che l'ha causata.
 
 #### Canale del simulatore (non parte del sistema)
 
@@ -248,5 +279,29 @@ registra un Last Will `offline` (retained) e pubblica `online`
   persistente" il fan resta richiesto, raffredda la covata sotto la soglia
   dell'heater e i due attuatori si alternano (priorità all'heater), mentre
   l'umidità resta sopra 75 %. Anomaly detection e alert NON ancora presenti.
+- **Step 9 — completato**: anomaly detection. Tab "Anomalies" in Node-RED:
+  tre regole per arnia valutate a ogni lettura — `weight_drop` (massimo
+  delle ultime N letture di peso − peso corrente, critical), `inactivity`
+  (voli sotto soglia con meteo favorevole, critical), `humidity` (umidità
+  interna sopra soglia, warning). Debounce nel tempo: `raised` dopo
+  `raise_after` letture anomale consecutive, `resolved` dopo `clear_after`
+  normali consecutive, quindi un solo messaggio per transizione (equivalente
+  temporale dell'isteresi del control loop). `inactivity` con meteo
+  sfavorevole non è valutabile: contatori congelati, un alert attivo non si
+  risolve di notte. Soglie nella sezione `anomalies` di `thresholds.json`
+  (quarta sezione del merge, validata nella tab Config). Stato delle regole
+  nel context store `file` (`contextStorage` in `settings.js`: `default` in
+  memoria + `file` localfilesystem, cartella `nodered/data/context/` in
+  `.gitignore`), così sopravvive a un riavvio di Node-RED. Alert su
+  `apiary/{hive_id}/alerts` e in InfluxDB: measurement `alert`, tag
+  `hive_id`/`rule`/`severity`, field `state`, `message`, `value` e, solo nei
+  resolved, `raised_at` (serve a Grafana per disegnare l'episodio).
+  Grafana: due annotation a regione (critiche rosse, avvisi arancioni) da
+  raised a resolved o fino ad "adesso" se ancora attive, e row "Anomalie" con
+  la tabella degli eventi. Console: colonna "Anomalie attive". Simulatore:
+  il fan non porta più la covata a 30 °C fissi ma la raffredda di 12 °C con
+  pavimento a 33.3 °C, quindi con "Umidità persistente" il fan resta acceso
+  e l'heater non interviene. Backfill e analytics/forecasting NON ancora
+  presenti.
 - **Step successivo**: da concordare con lo sviluppatore — non
   procedere senza il suo via libera esplicito.

@@ -258,3 +258,57 @@ docker compose exec mosquitto mosquitto_sub -v \
 With no perturbation the colony keeps the brood at about 34.3 °C by itself and
 no actuator command is sent. Restarting the simulator
 (`docker compose restart simulator`) resets every perturbation to its default.
+
+## Step 9 verification
+
+Node-RED (tab **Anomalies**) evaluates three rules per hive on every reading and
+publishes an alert on `apiary/{hive_id}/alerts` (QoS 1, not retained: alerts are
+events) only when a rule changes state:
+
+| Rule          | Severity | Anomalous reading                                              | Raised after | Resolved after |
+|---------------|----------|----------------------------------------------------------------|--------------|----------------|
+| `weight_drop` | critical | max of the last 12 weights − current weight > 1.5 kg            | 1 reading    | 1 reading      |
+| `inactivity`  | critical | flights ≤ 8 while the weather is favourable (15–30 °C, RH ≤ 80) | 24 readings  | 3 readings     |
+| `humidity`    | warning  | internal humidity > 75 %                                       | 24 readings  | 3 readings     |
+
+"After N readings" means N **consecutive** readings (24 readings = 2 minutes):
+this debounce gives exactly one `raised` and one `resolved` per episode. With
+unfavourable weather `inactivity` cannot be evaluated and its counters are
+frozen, so an active alert is not resolved just because it is night. The
+thresholds are the `anomalies` section of `nodered/data/config/thresholds.json`
+(per-hive overrides work as for the other sections). The rule state is stored in
+Node-RED's `file` context store (`nodered/data/context/`, git-ignored), so it
+survives a Node-RED restart.
+
+Watch the alerts:
+
+```bash
+docker compose exec mosquitto mosquitto_sub -v -t 'apiary/+/alerts'
+```
+
+Provoke each anomaly from the console (http://localhost:1880/dashboard), after
+selecting a hive:
+
+| Click                 | Expected alert                                                              |
+|-----------------------|-----------------------------------------------------------------------------|
+| "Sciamatura"          | `weight_drop` raised within 2 readings, resolved by itself about a minute later |
+| "Colonia debole"      | `inactivity` raised after 2 minutes of favourable weather (it waits for the simulated day); "Normale" resolves it |
+| "Umidità persistente" | fan ON after a few seconds, `humidity` raised after 2 minutes; "Normale" resolves it once humidity is back under 75 % |
+
+The "Anomalie attive" column of the console table shows the active alerts of
+each hive.
+
+In Grafana (http://localhost:3000) every anomaly is a coloured band on the time
+series, from `raised` to `resolved` or up to now while it is still active (red =
+critical, orange = warning; hover the band for hive, rule and message). The
+**Anomalie** row lists the alert events of the selected time range, newest
+first. Alerts are stored in InfluxDB as measurement `alert` (tags `hive_id`,
+`rule`, `severity`; fields `state`, `message`, `value`, plus `raised_at` on
+resolved events):
+
+```bash
+set -a; . ./.env; set +a
+docker compose exec influxdb influx query --org beehive --token "$INFLUXDB_TOKEN" \
+ 'from(bucket:"beehive") |> range(start:-1h)
+  |> filter(fn:(r)=>r._measurement=="alert" and r._field=="state")'
+```

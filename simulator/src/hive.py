@@ -55,7 +55,10 @@ class Hive:
         self.brood_heat_gain = 1.0
         self.brood_noise = 0.1
         self.brood_target_heat = 35.0
-        self.brood_target_cool = 30.0
+        # The fan cools the brood by a fixed amount, but never below a floor that stays
+        # above the heater thresholds: ventilating for humidity must not call the heater.
+        self.brood_fan_cooling = 12.0
+        self.brood_fan_floor = 33.3
         self.humidity_baseline = 65.0
         self.humidity_fan_drop = 13.0
         self.humidity_noise = 0.5
@@ -196,8 +199,6 @@ class Hive:
         # Target depends on actuators
         if self.heater_on:
             target = self.brood_target_heat
-        elif self.fan_on:
-            target = self.brood_target_cool
         else:
             # Thermoregulation holds the setpoint inside the comfort band; outside it
             # the colony cannot compensate and the brood follows the weather.
@@ -206,6 +207,10 @@ class Hive:
                 target -= self.brood_cold_gain * (self.brood_comfort_min - self.ext_temp)
             elif self.ext_temp > self.brood_comfort_max:
                 target += self.brood_heat_gain * (self.ext_temp - self.brood_comfort_max)
+            if self.fan_on:
+                cooled = max(target - self.brood_fan_cooling, self.brood_fan_floor)
+                # min(): in cold weather the floor must not turn the fan into a heater
+                target = min(target, cooled)
 
         noise = random.gauss(0, self.brood_noise)
         self.brood_temp += (target - self.brood_temp) * self.temp_inercia + noise

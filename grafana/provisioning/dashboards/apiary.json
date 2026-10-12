@@ -44,7 +44,80 @@
     ]
   },
   "annotations": {
-    "list": []
+    "list": [
+      {
+        "name": "Anomalie critiche",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influxdb-beehive"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "red",
+        "target": {
+          "refId": "Anno",
+          "query": "// One region per anomaly: from \"raised\" to \"resolved\", or up to now while still active.\n// Alerts are few, so the whole history is read: an episode may start before the range.\nalerts = from(bucket: \"beehive\")\n  |> range(start: time(v: 0), stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"alert\" and r.severity == \"critical\")\n  |> filter(fn: (r) => r._field == \"state\" or r._field == \"message\" or r._field == \"raised_at\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"hive_id\", \"rule\"])\n  |> sort(columns: [\"_time\"])\n\nclosed = alerts\n  |> filter(fn: (r) => r.state == \"resolved\" and exists r.raised_at)\n  |> map(fn: (r) => ({_time: time(v: r.raised_at), timeEnd: r._time, hive_id: r.hive_id, rule: r.rule, message: r.message}))\n\nactive = alerts\n  |> tail(n: 1)\n  |> filter(fn: (r) => r.state == \"raised\")\n  |> map(fn: (r) => ({_time: r._time, timeEnd: v.timeRangeStop, hive_id: r.hive_id, rule: r.rule, message: r.message}))\n\nunion(tables: [closed, active])\n  |> filter(fn: (r) => r.timeEnd >= v.timeRangeStart)\n  |> group()\n  |> map(fn: (r) => ({_time: r._time, timeEnd: r.timeEnd, title: r.hive_id + \" · \" + (if r.rule == \"weight_drop\" then \"Calo di peso\" else if r.rule == \"inactivity\" then \"Inattività\" else \"Umidità persistente\"), text: r.message, tags: r.hive_id}))\n  |> sort(columns: [\"_time\"])"
+        },
+        "mappings": {
+          "time": {
+            "source": "field",
+            "value": "_time"
+          },
+          "timeEnd": {
+            "source": "field",
+            "value": "timeEnd"
+          },
+          "title": {
+            "source": "field",
+            "value": "title"
+          },
+          "text": {
+            "source": "field",
+            "value": "text"
+          },
+          "tags": {
+            "source": "field",
+            "value": "tags"
+          }
+        }
+      },
+      {
+        "name": "Avvisi",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influxdb-beehive"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "orange",
+        "target": {
+          "refId": "Anno",
+          "query": "// One region per anomaly: from \"raised\" to \"resolved\", or up to now while still active.\n// Alerts are few, so the whole history is read: an episode may start before the range.\nalerts = from(bucket: \"beehive\")\n  |> range(start: time(v: 0), stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"alert\" and r.severity == \"warning\")\n  |> filter(fn: (r) => r._field == \"state\" or r._field == \"message\" or r._field == \"raised_at\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"hive_id\", \"rule\"])\n  |> sort(columns: [\"_time\"])\n\nclosed = alerts\n  |> filter(fn: (r) => r.state == \"resolved\" and exists r.raised_at)\n  |> map(fn: (r) => ({_time: time(v: r.raised_at), timeEnd: r._time, hive_id: r.hive_id, rule: r.rule, message: r.message}))\n\nactive = alerts\n  |> tail(n: 1)\n  |> filter(fn: (r) => r.state == \"raised\")\n  |> map(fn: (r) => ({_time: r._time, timeEnd: v.timeRangeStop, hive_id: r.hive_id, rule: r.rule, message: r.message}))\n\nunion(tables: [closed, active])\n  |> filter(fn: (r) => r.timeEnd >= v.timeRangeStart)\n  |> group()\n  |> map(fn: (r) => ({_time: r._time, timeEnd: r.timeEnd, title: r.hive_id + \" · \" + (if r.rule == \"weight_drop\" then \"Calo di peso\" else if r.rule == \"inactivity\" then \"Inattività\" else \"Umidità persistente\"), text: r.message, tags: r.hive_id}))\n  |> sort(columns: [\"_time\"])"
+        },
+        "mappings": {
+          "time": {
+            "source": "field",
+            "value": "_time"
+          },
+          "timeEnd": {
+            "source": "field",
+            "value": "timeEnd"
+          },
+          "title": {
+            "source": "field",
+            "value": "title"
+          },
+          "text": {
+            "source": "field",
+            "value": "text"
+          },
+          "tags": {
+            "source": "field",
+            "value": "tags"
+          }
+        }
+      }
+    ]
   },
   "links": [],
   "panels": [
@@ -379,6 +452,169 @@
       ]
     },
     {
+      "id": 16,
+      "type": "row",
+      "title": "Anomalie",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "panels": []
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "Alert nell'intervallo",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-beehive"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ora"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 180
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Arnia"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Regola"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 180
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Stato"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "Rilevata": {
+                        "color": "red",
+                        "index": 0
+                      },
+                      "Risolta": {
+                        "color": "green",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Severità"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "_time": 0,
+              "hive_id": 1,
+              "rule": 2,
+              "state": 3,
+              "severity": 4,
+              "message": 5
+            },
+            "renameByName": {
+              "_time": "Ora",
+              "hive_id": "Arnia",
+              "rule": "Regola",
+              "state": "Stato",
+              "severity": "Severità",
+              "message": "Messaggio"
+            }
+          }
+        }
+      ],
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-beehive"
+          },
+          "query": "from(bucket: \"beehive\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"alert\")\n  |> filter(fn: (r) => r._field == \"state\" or r._field == \"message\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n  |> sort(columns: [\"_time\"], desc: true)\n  |> map(fn: (r) => ({_time: r._time, hive_id: r.hive_id, rule: if r.rule == \"weight_drop\" then \"Calo di peso\" else if r.rule == \"inactivity\" then \"Inattività\" else \"Umidità persistente\", state: if r.state == \"raised\" then \"Rilevata\" else \"Risolta\", severity: if r.severity == \"critical\" then \"Critica\" else \"Avviso\", message: r.message}))"
+        }
+      ]
+    },
+    {
       "id": 6,
       "type": "row",
       "title": "Interno arnia",
@@ -387,7 +623,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 20
       },
       "panels": []
     },
@@ -403,7 +639,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 13
+        "y": 21
       },
       "fieldConfig": {
         "defaults": {
@@ -456,7 +692,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 13
+        "y": 21
       },
       "fieldConfig": {
         "defaults": {
@@ -509,7 +745,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 21
+        "y": 29
       },
       "fieldConfig": {
         "defaults": {
@@ -562,7 +798,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 21
+        "y": 29
       },
       "fieldConfig": {
         "defaults": {
@@ -613,7 +849,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 37
       },
       "panels": []
     },
@@ -629,7 +865,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 30
+        "y": 38
       },
       "fieldConfig": {
         "defaults": {
@@ -682,7 +918,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 30
+        "y": 38
       },
       "fieldConfig": {
         "defaults": {

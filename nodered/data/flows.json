@@ -236,7 +236,7 @@
         "type": "function",
         "z": "c7a0000000000001",
         "name": "merge + validate",
-        "func": "const SECTIONS = [\"heater\", \"fan_temp\", \"fan_humidity\"];\nconst file = msg.payload || {};\nconst defaults = file.defaults || {};\nconst override = (file.hives || {})[msg.hive_id] || {};\n\n// Merge per section, field by field: an override may redefine a single threshold\nconst cfg = {};\nfor (const s of SECTIONS) {\n    cfg[s] = Object.assign({}, defaults[s], override[s]);\n}\n\nconst num = (v) => typeof v === \"number\" && isFinite(v);\nconst valid =\n    num(cfg.heater.on_below) && num(cfg.heater.off_above) &&\n    cfg.heater.on_below < cfg.heater.off_above &&\n    [\"fan_temp\", \"fan_humidity\"].every((s) =>\n        num(cfg[s].on_above) && num(cfg[s].off_below) && cfg[s].off_below < cfg[s].on_above);\n\nif (!valid) {\n    node.warn(`invalid thresholds for ${msg.hive_id}, config not published: ${JSON.stringify(cfg)}`);\n    return null;\n}\nreturn { topic: `apiary/${msg.hive_id}/config`, payload: cfg };",
+        "func": "const SECTIONS = [\"heater\", \"fan_temp\", \"fan_humidity\"];\nconst RULES = {\n    weight_drop: [\"max_drop_kg\", \"window_readings\", \"raise_after\", \"clear_after\"],\n    inactivity: [\"max_flights\", \"min_ext_temp\", \"max_ext_temp\", \"max_ext_hum\", \"raise_after\", \"clear_after\"],\n    humidity: [\"above\", \"raise_after\", \"clear_after\"]\n};\nconst file = msg.payload || {};\nconst defaults = file.defaults || {};\nconst override = (file.hives || {})[msg.hive_id] || {};\n\n// Merge per section, field by field: an override may redefine a single threshold\nconst cfg = {};\nfor (const s of SECTIONS) {\n    cfg[s] = Object.assign({}, defaults[s], override[s]);\n}\n// \"anomalies\" is one level deeper: same merge, rule by rule\ncfg.anomalies = {};\nfor (const rule of Object.keys(RULES)) {\n    cfg.anomalies[rule] = Object.assign({}, (defaults.anomalies || {})[rule], (override.anomalies || {})[rule]);\n}\n\nconst num = (v) => typeof v === \"number\" && isFinite(v);\nconst valid =\n    num(cfg.heater.on_below) && num(cfg.heater.off_above) &&\n    cfg.heater.on_below < cfg.heater.off_above &&\n    [\"fan_temp\", \"fan_humidity\"].every((s) =>\n        num(cfg[s].on_above) && num(cfg[s].off_below) && cfg[s].off_below < cfg[s].on_above) &&\n    Object.keys(RULES).every((rule) =>\n        RULES[rule].every((f) => num(cfg.anomalies[rule][f]) && cfg.anomalies[rule][f] > 0)) &&\n    cfg.anomalies.inactivity.min_ext_temp < cfg.anomalies.inactivity.max_ext_temp;\n\nif (!valid) {\n    node.warn(`invalid thresholds for ${msg.hive_id}, config not published: ${JSON.stringify(cfg)}`);\n    return null;\n}\nreturn { topic: `apiary/${msg.hive_id}/config`, payload: cfg };",
         "outputs": 1,
         "timeout": 0,
         "noerr": 0,
@@ -701,7 +701,7 @@
         "type": "function",
         "z": "c8a0000000000001",
         "name": "hive state",
-        "func": "// One store for everything the console shows, keyed by hive id (flow context \"hives\").\nconst parts = msg.topic.split(\"/\");\nconst id = parts[1];\nconst hives = flow.get(\"hives\") || {};\nconst hive = hives[id] = hives[id] || {};\nlet selected = flow.get(\"selected\") || null;\nlet optionsChanged = false;\nlet syncSliders = false;\n\nif (parts[0] === \"apiary\" && parts.length === 3 && parts[2] === \"status\") {\n    const online = msg.payload === \"online\";\n    optionsChanged = hive.online !== online;\n    hive.online = online;\n} else if (parts[0] === \"apiary\" && parts.length === 5 && parts[4] === \"state\") {\n    hive[parts[3]] = msg.payload;\n} else if (parts[0] === \"apiary\" && parts[2] === \"sensors\") {\n    if ((parts[3] !== \"brood_temp\" && parts[3] !== \"humidity\") || !msg.payload ||\n        typeof msg.payload.value !== \"number\") {\n        return null;\n    }\n    hive[parts[3]] = msg.payload.value;\n} else if (parts[0] === \"sim\" && parts[3] === \"state\" && msg.payload && typeof msg.payload === \"object\") {\n    // The hive's own (retained) answer is the only source of truth for the sliders\n    hive.perturbation = msg.payload;\n    syncSliders = id === selected;\n} else {\n    return null;\n}\nflow.set(\"hives\", hives);\n\nconst online = Object.keys(hives).filter((k) => hives[k].online).sort();\nif (!online.includes(selected)) {\n    selected = online[0] || null;\n    flow.set(\"selected\", selected);\n    optionsChanged = true;\n    syncSliders = true;\n}\n\nconst signed = (v) => (v > 0 ? \"+\" : \"\") + v;\nconst rows = online.map((k) => {\n    const h = hives[k];\n    const p = h.perturbation || {};\n    return {\n        hive: k,\n        ext_temp_offset: p.ext_temp_offset === undefined ? \"?\" : `${signed(p.ext_temp_offset)} °C`,\n        humidity_offset: p.humidity_offset === undefined ? \"?\" : signed(p.humidity_offset),\n        flight_factor: p.flight_factor === undefined ? \"?\" : `${Math.round(p.flight_factor * 100)} %`,\n        heater: h.heater || \"?\",\n        fan: h.fan || \"?\",\n        brood_temp: h.brood_temp === undefined ? \"?\" : `${h.brood_temp.toFixed(1)} °C`,\n        humidity: h.humidity === undefined ? \"?\" : `${h.humidity.toFixed(1)} %`\n    };\n});\n\nreturn [\n    optionsChanged ? { ui_update: { options: online }, payload: selected } : null,\n    syncSliders ? { payload: selected } : null,\n    { payload: rows }\n];",
+        "func": "// One store for everything the console shows, keyed by hive id (flow context \"hives\").\nconst parts = msg.topic.split(\"/\");\nconst id = parts[1];\nconst hives = flow.get(\"hives\") || {};\nconst hive = hives[id] = hives[id] || {};\nlet selected = flow.get(\"selected\") || null;\nlet optionsChanged = false;\nlet syncSliders = false;\n\nif (parts[0] === \"apiary\" && parts.length === 3 && parts[2] === \"status\") {\n    const online = msg.payload === \"online\";\n    optionsChanged = hive.online !== online;\n    hive.online = online;\n} else if (parts[0] === \"apiary\" && parts.length === 5 && parts[4] === \"state\") {\n    hive[parts[3]] = msg.payload;\n} else if (parts[0] === \"apiary\" && parts[2] === \"sensors\") {\n    if ((parts[3] !== \"brood_temp\" && parts[3] !== \"humidity\") || !msg.payload ||\n        typeof msg.payload.value !== \"number\") {\n        return null;\n    }\n    hive[parts[3]] = msg.payload.value;\n} else if (parts[0] === \"apiary\" && parts.length === 3 && parts[2] === \"alerts\") {\n    // Alerts are events, not retained: remember the active ones across restarts\n    const a = msg.payload;\n    if (!a || !a.rule) {\n        return null;\n    }\n    const alerts = flow.get(\"alerts\", \"file\") || {};\n    alerts[id] = alerts[id] || {};\n    if (a.state === \"raised\") {\n        alerts[id][a.rule] = true;\n    } else {\n        delete alerts[id][a.rule];\n    }\n    flow.set(\"alerts\", alerts, \"file\");\n} else if (parts[0] === \"sim\" && parts[3] === \"state\" && msg.payload && typeof msg.payload === \"object\") {\n    // The hive's own (retained) answer is the only source of truth for the sliders\n    hive.perturbation = msg.payload;\n    syncSliders = id === selected;\n} else {\n    return null;\n}\nflow.set(\"hives\", hives);\n\nconst online = Object.keys(hives).filter((k) => hives[k].online).sort();\nif (!online.includes(selected)) {\n    selected = online[0] || null;\n    flow.set(\"selected\", selected);\n    optionsChanged = true;\n    syncSliders = true;\n}\n\nconst signed = (v) => (v > 0 ? \"+\" : \"\") + v;\nconst RULE_NAMES = { weight_drop: \"Calo di peso\", inactivity: \"Inattività\", humidity: \"Umidità persistente\" };\nconst activeAlerts = flow.get(\"alerts\", \"file\") || {};\nconst rows = online.map((k) => {\n    const h = hives[k];\n    const p = h.perturbation || {};\n    return {\n        hive: k,\n        ext_temp_offset: p.ext_temp_offset === undefined ? \"?\" : `${signed(p.ext_temp_offset)} °C`,\n        humidity_offset: p.humidity_offset === undefined ? \"?\" : signed(p.humidity_offset),\n        flight_factor: p.flight_factor === undefined ? \"?\" : `${Math.round(p.flight_factor * 100)} %`,\n        heater: h.heater || \"?\",\n        fan: h.fan || \"?\",\n        brood_temp: h.brood_temp === undefined ? \"?\" : `${h.brood_temp.toFixed(1)} °C`,\n        humidity: h.humidity === undefined ? \"?\" : `${h.humidity.toFixed(1)} %`,\n        alerts: Object.keys(activeAlerts[k] || {}).map((r) => RULE_NAMES[r] || r).join(\", \") || \"—\"\n    };\n});\n\nreturn [\n    optionsChanged ? { ui_update: { options: online }, payload: selected } : null,\n    syncSliders ? { payload: selected } : null,\n    { payload: rows }\n];",
         "outputs": 3,
         "timeout": 0,
         "noerr": 0,
@@ -1273,6 +1273,14 @@
                 "type": "text",
                 "width": "",
                 "align": "start"
+            },
+            {
+                "title": "Anomalie attive",
+                "key": "alerts",
+                "keyType": "key",
+                "type": "text",
+                "width": "",
+                "align": "start"
             }
         ],
         "mobileBreakpoint": "sm",
@@ -1283,6 +1291,192 @@
         "y": 340,
         "wires": [
             []
+        ]
+    },
+    {
+        "id": "c9a0000000000001",
+        "type": "tab",
+        "label": "Anomalies",
+        "disabled": false,
+        "info": "The three anomaly rules (weight_drop, inactivity, humidity) with raise_after/clear_after debounce. Alerts are events on apiary/{hive_id}/alerts (QoS 1, not retained). Rule state is kept in the \"file\" context store.",
+        "env": []
+    },
+    {
+        "id": "c9a0000000000002",
+        "type": "mqtt in",
+        "z": "c9a0000000000001",
+        "name": "",
+        "topic": "apiary/+/config",
+        "qos": "1",
+        "datatype": "json",
+        "broker": "e75965ed0fac5596",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 150,
+        "y": 80,
+        "wires": [
+            [
+                "c9a0000000000003"
+            ]
+        ]
+    },
+    {
+        "id": "c9a0000000000003",
+        "type": "function",
+        "z": "c9a0000000000001",
+        "name": "store anomaly config",
+        "func": "// apiary/{hive_id}/config: only the \"anomalies\" section matters here\nconst parts = msg.topic.split(\"/\");\nconst a = msg.payload && msg.payload.anomalies;\nif (parts.length !== 3 || !a || !a.weight_drop || !a.inactivity || !a.humidity) {\n    return null;\n}\nconst config = flow.get(\"config\") || {};\nconfig[parts[1]] = a;\nflow.set(\"config\", config);\nreturn null;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 420,
+        "y": 80,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "c9a0000000000004",
+        "type": "mqtt in",
+        "z": "c9a0000000000001",
+        "name": "",
+        "topic": "apiary/+/sensors/#",
+        "qos": "0",
+        "datatype": "json",
+        "broker": "e75965ed0fac5596",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 160,
+        "y": 180,
+        "wires": [
+            [
+                "c9a0000000000005"
+            ]
+        ]
+    },
+    {
+        "id": "c9a0000000000005",
+        "type": "function",
+        "z": "c9a0000000000001",
+        "name": "evaluate rules",
+        "func": "// apiary/{hive_id}/sensors/{sensor}\nconst parts = msg.topic.split(\"/\");\nif (parts.length !== 4 || !msg.payload || typeof msg.payload.value !== \"number\") {\n    return null;\n}\nconst hive = parts[1];\nconst sensor = parts[3];\nconst value = msg.payload.value;\nconst ts = msg.payload.ts;\n\nconst cfg = (flow.get(\"config\") || {})[hive];\nif (!cfg) {\n    const warned = context.get(\"warned\") || {};\n    if (!warned[hive]) {\n        warned[hive] = true;\n        context.set(\"warned\", warned);\n        node.warn(`no anomaly config for ${hive} yet: rules idle`);\n    }\n    return null;\n}\n\n// Rule state lives in the \"file\" context store: it must survive a Node-RED restart,\n// otherwise an alert raised before the restart would never be resolved.\nconst all = flow.get(\"rules\", \"file\") || {};\nconst st = all[hive] = all[hive] || {};\nconst out = [];\n\n// Debounce in time (the counterpart of the hysteresis of the control loop): a rule is\n// raised after raise_after consecutive anomalous readings and resolved after\n// clear_after consecutive normal ones. Exactly one message per transition.\nfunction evaluate(rule, severity, anomalous, v, worse, messages) {\n    const r = st[rule] = st[rule] || { bad: 0, good: 0, active: false };\n    if (anomalous) {\n        r.bad += 1;\n        r.good = 0;\n    } else {\n        r.good += 1;\n        r.bad = 0;\n    }\n    if (r.active && anomalous && worse(v, r.peak)) {\n        r.peak = v;\n    }\n    let alert = null;\n    if (!r.active && r.bad >= cfg[rule].raise_after) {\n        r.active = true;\n        r.raised_at = ts;\n        r.peak = v;\n        alert = { rule: rule, state: \"raised\", severity: severity, message: messages.raised(), value: v, ts: ts };\n    } else if (r.active && r.good >= cfg[rule].clear_after) {\n        r.active = false;\n        alert = { rule: rule, state: \"resolved\", severity: severity, message: messages.resolved(r.peak),\n                  value: v, ts: ts, raised_at: r.raised_at };\n    }\n    if (alert) {\n        out.push({ topic: `apiary/${hive}/alerts`, payload: alert });\n    }\n}\n\nif (sensor === \"ext_temp\" || sensor === \"ext_hum\") {\n    st[sensor] = value;\n} else if (sensor === \"weight\") {\n    const c = cfg.weight_drop;\n    st.weights = (st.weights || []).concat(value).slice(-c.window_readings);\n    const drop = Math.round((Math.max(...st.weights) - value) * 100) / 100;\n    evaluate(\"weight_drop\", \"critical\", drop > c.max_drop_kg, drop, (a, b) => a > b, {\n        raised: () => `Calo di peso di ${drop.toFixed(1)} kg: possibile sciamatura o furto`,\n        resolved: (peak) => `Peso di nuovo stabile a ${value.toFixed(1)} kg dopo un calo di ${peak.toFixed(1)} kg`\n    });\n} else if (sensor === \"flights\") {\n    const c = cfg.inactivity;\n    const favourable = st.ext_temp >= c.min_ext_temp && st.ext_temp <= c.max_ext_temp &&\n        st.ext_hum <= c.max_ext_hum;\n    // Bad weather (or weather not known yet): the rule cannot be evaluated. The counters\n    // are frozen, neither advanced nor reset, so an active alert is not resolved at night.\n    if (favourable) {\n        evaluate(\"inactivity\", \"critical\", value <= c.max_flights, value, (a, b) => a < b, {\n            raised: () => `Attività di volo quasi assente (${value} voli) con meteo favorevole: colonia debole o orfana`,\n            resolved: () => `Attività di volo tornata normale (${value} voli)`\n        });\n    }\n} else if (sensor === \"humidity\") {\n    const c = cfg.humidity;\n    evaluate(\"humidity\", \"warning\", value > c.above, value, (a, b) => a > b, {\n        raised: () => `Umidità interna a ${value.toFixed(1)} %, sopra ${c.above} % in modo persistente: rischio di muffe e malattie`,\n        resolved: (peak) => `Umidità interna rientrata a ${value.toFixed(1)} % (picco ${peak.toFixed(1)} %)`\n    });\n} else {\n    return null;\n}\nflow.set(\"rules\", all, \"file\");\n\nconst active = [\"weight_drop\", \"inactivity\", \"humidity\"].filter((r) => st[r] && st[r].active);\nnode.status({\n    fill: active.length ? \"red\" : \"green\",\n    shape: \"dot\",\n    text: `${hive}: ${active.length ? active.join(\", \") : \"nessuna anomalia\"}`\n});\nreturn [out];",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 410,
+        "y": 180,
+        "wires": [
+            [
+                "c9a0000000000006",
+                "c9a0000000000007"
+            ]
+        ]
+    },
+    {
+        "id": "c9a0000000000006",
+        "type": "mqtt out",
+        "z": "c9a0000000000001",
+        "name": "alerts (QoS 1, not retained)",
+        "topic": "",
+        "qos": "1",
+        "retain": "false",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "e75965ed0fac5596",
+        "x": 680,
+        "y": 180,
+        "wires": []
+    },
+    {
+        "id": "c9a0000000000007",
+        "type": "debug",
+        "z": "c9a0000000000001",
+        "name": "alerts (disabled)",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 650,
+        "y": 240,
+        "wires": []
+    },
+    {
+        "id": "c9c0000000000001",
+        "type": "mqtt in",
+        "z": "0e6f1d69908a3eac",
+        "name": "",
+        "topic": "apiary/+/alerts",
+        "qos": "1",
+        "datatype": "json",
+        "broker": "e75965ed0fac5596",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 150,
+        "y": 360,
+        "wires": [
+            [
+                "c9c0000000000002"
+            ]
+        ]
+    },
+    {
+        "id": "c9c0000000000002",
+        "type": "function",
+        "z": "0e6f1d69908a3eac",
+        "name": "to alert point",
+        "func": "// apiary/{hive_id}/alerts\nconst parts = msg.topic.split(\"/\");\nconst a = msg.payload;\nconst valid = parts.length === 3 && a &&\n    [\"weight_drop\", \"inactivity\", \"humidity\"].includes(a.rule) &&\n    [\"raised\", \"resolved\"].includes(a.state) &&\n    [\"critical\", \"warning\"].includes(a.severity) &&\n    typeof a.message === \"string\" && typeof a.value === \"number\" &&\n    !isNaN(Date.parse(a.ts));\nif (!valid) {\n    return null;\n}\nconst fields = { state: a.state, message: a.message, value: a.value };\nif (a.state === \"resolved\" && typeof a.raised_at === \"string\") {\n    // Lets Grafana draw the whole episode as a region without pairing the two events\n    fields.raised_at = a.raised_at;\n}\nmsg.payload = [{\n    measurement: \"alert\",\n    tags:   { hive_id: parts[1], rule: a.rule, severity: a.severity },\n    fields: fields,\n    timestamp: new Date(a.ts)\n}];\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 440,
+        "y": 360,
+        "wires": [
+            [
+                "a1f3b5d7c9e20468"
+            ]
+        ]
+    },
+    {
+        "id": "c8a0000000000015",
+        "type": "mqtt in",
+        "z": "c8a0000000000001",
+        "name": "",
+        "topic": "apiary/+/alerts",
+        "qos": "1",
+        "datatype": "json",
+        "broker": "e75965ed0fac5596",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 150,
+        "y": 340,
+        "wires": [
+            [
+                "c8a0000000000014"
+            ]
         ]
     }
 ]

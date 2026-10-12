@@ -10,3 +10,4 @@ nodered/data/.npm/
 nodered/data/flows_cred.json
 nodered/data/.config*.json
 nodered/data/.config*.json.backup
+nodered/data/context/
