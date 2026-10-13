@@ -273,7 +273,7 @@ events) only when a rule changes state:
 
 | Rule          | Severity | Anomalous reading                                              | Raised after | Resolved after |
 |---------------|----------|----------------------------------------------------------------|--------------|----------------|
-| `weight_drop` | critical | max of the last 12 weights − current weight > 1.5 kg            | 1 reading    | 1 reading      |
+| `weight_drop` | critical | max weight of the last 60 s − current weight > 1.5 kg           | 1 reading    | 1 reading      |
 | `inactivity`  | critical | flights ≤ 8 while the weather is favourable (15–30 °C, RH ≤ 80) | 24 readings  | 3 readings     |
 | `humidity`    | warning  | internal humidity > 75 %                                       | 24 readings  | 3 readings     |
 
@@ -285,6 +285,10 @@ thresholds are the `anomalies` section of `nodered/data/config/thresholds.json`
 (per-hive overrides work as for the other sections). The rule state is stored in
 Node-RED's `file` context store (`nodered/data/context/`, git-ignored), so it
 survives a Node-RED restart.
+The `weight_drop` window is a time window (`window_seconds`, measured on the payload
+`ts`), not a number of readings: readings saved by a previous session (after a
+simulator restart or a change of profile) are older than the window and are never
+compared with the new ones.
 
 Watch the alerts:
 

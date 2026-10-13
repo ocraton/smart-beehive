@@ -135,7 +135,7 @@ Payload di `config` (JSON, quattro sezioni, tutte obbligatorie):
   "fan_temp":     { "on_above": 36.0, "off_below": 34.5 },
   "fan_humidity": { "on_above": 75.0, "off_below": 65.0 },
   "anomalies": {
-    "weight_drop": { "max_drop_kg": 1.5, "window_readings": 12,
+    "weight_drop": { "max_drop_kg": 1.5, "window_seconds": 60,
                      "raise_after": 1, "clear_after": 1 },
     "inactivity":  { "max_flights": 8, "min_ext_temp": 15, "max_ext_temp": 30,
                      "max_ext_hum": 80, "raise_after": 24, "clear_after": 3 },
@@ -303,7 +303,11 @@ registra un Last Will `offline` (retained) e pubblica `online`
   l'umidità resta sopra 75 %. Anomaly detection e alert NON ancora presenti.
 - **Step 9 — completato**: anomaly detection. Tab "Anomalies" in Node-RED:
   tre regole per arnia valutate a ogni lettura — `weight_drop` (massimo
-  delle ultime N letture di peso − peso corrente, critical), `inactivity`
+  dei pesi degli ultimi `window_seconds` secondi − peso corrente, critical;
+  la finestra è nel tempo, misurata sul `ts` del payload, non in letture:
+  con le letture, dopo un riavvio del simulatore o un cambio di profilo la
+  finestra salvata su file conteneva pesi di una sessione precedente e un
+  restart più leggero di `max_drop_kg` faceva scattare un falso calo di peso), `inactivity`
   (voli sotto soglia con meteo favorevole, critical), `humidity` (umidità
   interna sopra soglia, warning). Debounce nel tempo: `raised` dopo
   `raise_after` letture anomale consecutive, `resolved` dopo `clear_after`

@@ -4,7 +4,7 @@
     "fan_temp":     { "on_above": 36.0, "off_below": 34.5 },
     "fan_humidity": { "on_above": 75.0, "off_below": 65.0 },
     "anomalies": {
-      "weight_drop": { "max_drop_kg": 1.5, "window_readings": 12,
+      "weight_drop": { "max_drop_kg": 1.5, "window_seconds": 60,
                        "raise_after": 1, "clear_after": 1 },
       "inactivity":  { "max_flights": 8, "min_ext_temp": 15, "max_ext_temp": 30,
                        "max_ext_hum": 80, "raise_after": 24, "clear_after": 3 },
