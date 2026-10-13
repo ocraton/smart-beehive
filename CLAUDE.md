@@ -86,11 +86,28 @@ Container Docker separati, orchestrati con un unico `docker-compose.yml`:
   smielatura).
 - **Grafana**: sola lettura da InfluxDB, dashboard con variabile
   `hive_id`, stato attuatori, alert come annotation.
-- **Tempo simulato**: uno script di backfill scrive mesi di storico
-  sintetico (con stagionalità) direttamente su InfluxDB, per rendere
-  credibile il forecasting senza aspettare mesi reali durante la demo.
-  I dati live hanno timestamp reali (con fisica accelerata), mentre il
-  backfill scriverà lo storico nel passato fino ad "adesso".
+- **Tempo simulato**: un servizio one-shot `backfill` (Python, cartella
+  `backfill/`) scrive un anno di storico sintetico direttamente su InfluxDB
+  a ogni avvio dello stack, per rendere credibile il forecasting senza
+  aspettare mesi reali durante la demo. `simulator` ha `depends_on: backfill`
+  con `service_completed_successfully`: parte solo a storico scritto. Ordine:
+  influxdb healthy → backfill → simulator. Funzionamento: se c'è una sessione
+  live (telemetry più recente di 8 s) lo storico finisce dove quella
+  sessione inizia e la sessione non si tocca, altrimenti finisce "adesso";
+  poi delete di tutto il measurement `telemetry` precedente (restano
+  `actuator` e `alert`) e write a batch di 5000 punti. Risoluzione oraria
+  (8760 punti per serie), stesso schema dei dati live, seed fisso
+  (`BACKFILL_SEED=42`) e chiavi dei numeri casuali legate alla data
+  assoluta, quindi stessa data → stessi valori a ogni esecuzione. Il peso
+  è ancorato (traslazione costante) al peso da cui parte il live, così
+  storico e live si raccordano; la formula iniziale del simulatore è
+  replicata in `backfill/src/model.py` e le due devono restare allineate.
+  Il generatore è strutturato sulle quattro componenti della lezione 10
+  (`trend_component`, `seasonal_component`, `cyclical_component`,
+  `irregular_component`). Profili per arnia in `backfill/profiles.json`,
+  con una `tara` (peso di arnia vuota + api): riserve = peso − tara, serve
+  al forecasting. I dati live hanno timestamp reali (con fisica accelerata),
+  il backfill scrive lo storico nel passato fino ad "adesso".
 - **Soglie/configurazione**: file JSON per arnia, ripubblicato da
   Node-RED come messaggio MQTT *retained* su `apiary/{hive_id}/config`.
   Niente container dedicato per ora (vedi "Cosa abbiamo scartato").
@@ -303,5 +320,38 @@ registra un Last Will `offline` (retained) e pubblica `online`
   pavimento a 33.3 °C, quindi con "Umidità persistente" il fan resta acceso
   e l'heater non interviene. Backfill e analytics/forecasting NON ancora
   presenti.
+- **Step 10 — completato**: backfill di un anno di storico. Servizio
+  one-shot `backfill` in `docker-compose.yml` (`restart: "no"`, dopo
+  influxdb healthy; `simulator` aspetta `service_completed_successfully`);
+  `HIVE_IDS` definito una sola volta con un'ancora YAML (`x-hive-ids`).
+  Fine dello storico = inizio della sessione live in corso (telemetry più
+  recente di 8 s, la sessione non si tocca) oppure "adesso"; delete di tutto
+  `telemetry` precedente e write orario (8760 punti per serie, 2 arnie x 6
+  sensori), peso ancorato al primo peso live o alla formula del simulatore
+  (±0.1 kg). Modello per componenti della lezione 10, meteo da catena di
+  Markov (giorni buoni/brutti), calendario apistico (raccolto maggio-luglio,
+  smielatura a metà luglio, nutrizione a metà settembre, consumo da ottobre).
+  Profili in `backfill/profiles.json`: hive-01 forte (smielatura 12 kg,
+  riserve finali 19.4 kg), hive-02 debole (6 kg, riserve 8.0 kg, tara 34.5 kg
+  perché il peso finale è fissato dall'ancoraggio). Grafana: row "Storico"
+  con peso, temperatura esterna (media, min e max giornalieri) e voli
+  (media x 24, indipendente dalla risoluzione) sugli ultimi 12 mesi, con
+  relative time override. Verificati conteggi, continuità del peso (buco
+  < 1 h), stagionalità, determinismo, `up -d` a stack avviato e che control
+  loop e anomalie funzionano ancora. Analytics/forecasting NON ancora
+  presenti.
 - **Step successivo**: da concordare con lo sviluppatore — non
   procedere senza il suo via libera esplicito.
+
+## Possibili estensioni
+
+Da valutare solo dopo il core, nell'ordine che conviene:
+
+- **Pulsante "Rigenera storico / Reset demo"** nella console: servizio
+  `backfill` sempre attivo che ascolta `sim/backfill/run` (canale `sim/`,
+  non `apiary/`) e rigenera lo storico. NON tramite docker socket montato
+  nella console: sarebbe un accesso root all'host per un pulsante.
+- **Configuratore soglie Filament**: UI per modificare le soglie a runtime
+  (oggi file JSON + messaggio MQTT retained), promuovendo il config service
+  HTTP scartato sopra.
+- **CoAP**: estensione finale se c'è tempo (vedi "Cosa abbiamo scartato").

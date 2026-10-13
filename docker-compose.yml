@@ -1,3 +1,6 @@
+# Single definition of the hives, shared by the simulator and the backfill
+x-hive-ids: &hive-ids "hive-01,hive-02"
+
 services:
   mosquitto:
     image: eclipse-mosquitto:2
@@ -13,14 +16,34 @@ services:
     build: ./simulator
     container_name: beehive_simulator
     depends_on:
-      - mosquitto
+      mosquitto:
+        condition: service_started
+      backfill:
+        condition: service_completed_successfully
     environment:
       MQTT_HOST: mosquitto
       MQTT_PORT: 1883
-      HIVE_IDS: "hive-01,hive-02"
+      HIVE_IDS: *hive-ids
       TICK_SECONDS: 5
       SIM_MINUTES_PER_TICK: 15
     restart: unless-stopped
+
+  # One-shot: writes a year of synthetic history before the live simulator starts
+  backfill:
+    build: ./backfill
+    container_name: beehive_backfill
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    environment:
+      INFLUXDB_URL: http://influxdb:8086
+      INFLUXDB_ORG: ${INFLUXDB_ORG:?copy .env.example to .env}
+      INFLUXDB_BUCKET: ${INFLUXDB_BUCKET:?copy .env.example to .env}
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:?copy .env.example to .env}
+      HIVE_IDS: *hive-ids
+      BACKFILL_DAYS: 365
+      BACKFILL_SEED: 42
+    restart: "no"
 
   influxdb:
     image: influxdb:2.7

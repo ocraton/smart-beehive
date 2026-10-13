@@ -958,6 +958,265 @@
           "query": "from(bucket: \"beehive\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.sensor == \"ext_hum\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"hive_id\"])"
         }
       ]
+    },
+    {
+      "id": 18,
+      "type": "row",
+      "title": "Storico",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 46
+      },
+      "panels": []
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Peso - ultimi 12 mesi",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-beehive"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 47
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "${__field.labels.hive_id}",
+          "unit": "masskg",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-beehive"
+          },
+          "query": "from(bucket: \"beehive\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.sensor == \"weight\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> aggregateWindow(every: 1d, fn: mean, createEmpty: false, timeSrc: \"_start\")\n  |> keep(columns: [\"_time\", \"_value\", \"hive_id\"])"
+        }
+      ],
+      "timeFrom": "12M"
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Temperatura esterna - ultimi 12 mesi",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-beehive"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 47
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "${__field.labels.hive_id}",
+          "unit": "celsius",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "rgba(150,150,150,0.5)"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    6,
+                    6
+                  ]
+                }
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": true,
+                  "tooltip": false,
+                  "viz": false
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "rgba(150,150,150,0.5)"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    6,
+                    6
+                  ]
+                }
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": true,
+                  "tooltip": false,
+                  "viz": false
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-beehive"
+          },
+          "query": "from(bucket: \"beehive\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.sensor == \"ext_temp\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> aggregateWindow(every: 1d, fn: mean, createEmpty: false, timeSrc: \"_start\")\n  |> keep(columns: [\"_time\", \"_value\", \"hive_id\"])"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-beehive"
+          },
+          "query": "from(bucket: \"beehive\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.sensor == \"ext_temp\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> aggregateWindow(every: 1d, fn: min, createEmpty: false, timeSrc: \"_start\")\n  |> keep(columns: [\"_time\", \"_value\", \"hive_id\"])"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-beehive"
+          },
+          "query": "from(bucket: \"beehive\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.sensor == \"ext_temp\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> aggregateWindow(every: 1d, fn: max, createEmpty: false, timeSrc: \"_start\")\n  |> keep(columns: [\"_time\", \"_value\", \"hive_id\"])"
+        }
+      ],
+      "timeFrom": "12M"
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Attività di volo - ultimi 12 mesi",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-beehive"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 47
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "${__field.labels.hive_id}",
+          "unit": "none",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-beehive"
+          },
+          "query": "from(bucket: \"beehive\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.sensor == \"flights\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> aggregateWindow(every: 1d, fn: mean, createEmpty: false, timeSrc: \"_start\")\n  |> map(fn: (r) => ({r with _value: r._value * 24.0}))\n  |> keep(columns: [\"_time\", \"_value\", \"hive_id\"])"
+        }
+      ],
+      "timeFrom": "12M"
     }
   ]
 }

@@ -1,0 +1,39 @@
+{
+    "_notes": {
+        "tare_kg": "Weight of the empty hive plus bees. Reserves (honey and pollen stores) = weight - tare_kg: the forecasting step uses it to estimate when the stores run out.",
+        "strength": "Colony strength, 1.0 = strong. Scales foraging, flights and nectar income.",
+        "flow_scale": "Scales the nectar income of the hive (quality of the foraging area).",
+        "consumption_scale": "Scales the colony's own consumption of stores.",
+        "honey_harvest_kg": "Honey removed in one morning on harvest_day (MM-DD).",
+        "autumn_feeding_kg": "Syrup given between Sep 15 and Sep 18."
+    },
+    "default": {
+        "strength": 0.8,
+        "tare_kg": 24.0,
+        "flow_scale": 0.7,
+        "consumption_scale": 0.92,
+        "honey_harvest_kg": 8.0,
+        "autumn_feeding_kg": 2.0,
+        "harvest_day": "07-15"
+    },
+    "hives": {
+        "hive-01": {
+            "strength": 1.0,
+            "tare_kg": 24.0,
+            "flow_scale": 0.75,
+            "consumption_scale": 1.0,
+            "honey_harvest_kg": 12.0,
+            "autumn_feeding_kg": 2.0,
+            "harvest_day": "07-15"
+        },
+        "hive-02": {
+            "strength": 0.6,
+            "tare_kg": 34.5,
+            "flow_scale": 0.7,
+            "consumption_scale": 0.85,
+            "honey_harvest_kg": 6.0,
+            "autumn_feeding_kg": 2.0,
+            "harvest_day": "07-18"
+        }
+    }
+}

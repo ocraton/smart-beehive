@@ -10,6 +10,11 @@ cp .env.example .env    # then edit the values (never commit .env)
 docker compose up -d --build
 ```
 
+Startup order: `influxdb` (healthy) → `backfill` (writes one year of history and
+exits) → `simulator` (starts only when the backfill has completed successfully).
+The hives are defined once, in `x-hive-ids` at the top of `docker-compose.yml`, and
+shared by `simulator` and `backfill`.
+
 `.env` holds the InfluxDB credentials and admin token. InfluxDB reads them
 only on its **first** start, when the volume is empty: to change them later
 you must reset its volumes (`docker compose down` followed by
@@ -33,6 +38,7 @@ sudo chown -R 1000:1000 nodered/data
 | Service   | URL / port              | Notes                                      |
 |-----------|-------------------------|--------------------------------------------|
 | mosquitto | `localhost:1883`        | MQTT broker, anonymous access              |
+| backfill  | —                       | one-shot: writes a year of history, then exits |
 | simulator | —                       | publishes telemetry for `HIVE_IDS`         |
 | influxdb  | http://localhost:8086   | login with `INFLUXDB_USERNAME`/`PASSWORD`  |
 | nodered   | http://localhost:1880   | flows saved to `nodered/data/flows.json`   |
@@ -312,3 +318,79 @@ docker compose exec influxdb influx query --org beehive --token "$INFLUXDB_TOKEN
  'from(bucket:"beehive") |> range(start:-1h)
   |> filter(fn:(r)=>r._measurement=="alert" and r._field=="state")'
 ```
+
+## Step 10 verification
+
+The one-shot `backfill` service (`backfill/`) runs at every stack start, before the
+simulator, and fills InfluxDB with one year (`BACKFILL_DAYS=365`) of **hourly**
+synthetic telemetry per hive, same schema as the live data (`telemetry`, tags
+`hive_id` + `sensor`, field `value`, timestamps in seconds). It is deterministic:
+`BACKFILL_SEED=42` always gives the same values for the same date.
+
+What it does, in order:
+
+1. Looks for a live session: telemetry younger than 8 s. If there is one, the history
+   ends where the session starts and the session is never touched; otherwise it ends now.
+2. Generates the year (about 1.7 s) and anchors every hive's weight so that the last
+   historical value equals the weight the live simulator starts from (first live
+   reading, or the simulator formula `40 + crc32(hive_id) % 1500 / 100`).
+3. Deletes all `telemetry` before the end (old test sessions at 5 s resolution would
+   skew the averages; `actuator` and `alert` are not touched), then writes the points
+   and checks the counts. Exit code 0 only if everything matches, so the simulator
+   never starts after a failed backfill.
+
+Regenerate the history (this also resets the live session):
+
+```bash
+docker compose down && docker compose up -d
+docker compose logs backfill     # interval, points per hive, duration, anchors
+```
+
+`docker compose up -d` on a stack that is already running re-runs the backfill: the
+session in progress is detected and kept, only the history before it is rewritten and
+the simulator is not restarted.
+
+**Profiles.** `backfill/profiles.json` defines one profile per hive (plus `default`
+for hives not listed): `strength`, `flow_scale`, `consumption_scale`,
+`honey_harvest_kg` / `harvest_day`, `autumn_feeding_kg` and `tare_kg`. The tare is
+the weight of the empty hive plus bees: **reserves = weight - tare_kg**, which the
+forecasting step will use to estimate when the stores run out. `hive-01` is strong
+(harvest ~12 kg on 15 July, 19.4 kg of reserves at the end), `hive-02` is weak
+(~6 kg on 18 July, 8.0 kg of reserves: at about 1.5 kg/month they would run out
+around March).
+
+**Model.** `backfill/src/model.py` is organised on the four components of lesson 10:
+`trend_component` (forager population, comb), `seasonal_component` (annual
+temperature, daylight, nectar flow, brood season, consumption),
+`cyclical_component` (Markov chain of good/bad weather days) and
+`irregular_component` (noise, honey harvest, autumn feeding).
+
+Checks (expected: 8760 points per series, 12 series):
+
+```bash
+set -a; . ./.env; set +a
+# points per hive and sensor, history only
+docker compose exec influxdb influx query --org beehive --token "$INFLUXDB_TOKEN" \
+ 'from(bucket:"beehive") |> range(start: -400d, stop: <end of the backfill, see its log>)
+  |> filter(fn:(r)=>r._measurement=="telemetry")
+  |> group(columns:["hive_id","sensor"]) |> count()'
+
+# monthly mean of the outdoor temperature: coldest January, hottest July
+docker compose exec influxdb influx query --org beehive --token "$INFLUXDB_TOKEN" \
+ 'from(bucket:"beehive") |> range(start: -400d)
+  |> filter(fn:(r)=>r.sensor=="ext_temp" and r.hive_id=="hive-01")
+  |> aggregateWindow(every: 1mo, fn: mean, createEmpty: false, timeSrc: "_start")
+  |> keep(columns:["_time","_value"])'
+
+# largest daily weight drop: the honey harvest (hive-01: -12.2 kg on 15 July)
+docker compose exec influxdb influx query --org beehive --token "$INFLUXDB_TOKEN" \
+ 'from(bucket:"beehive") |> range(start: -400d)
+  |> filter(fn:(r)=>r.sensor=="weight" and r.hive_id=="hive-01")
+  |> aggregateWindow(every: 1d, fn: last, createEmpty: false, timeSrc: "_start")
+  |> difference() |> sort(columns:["_value"]) |> limit(n:1)'
+```
+
+In Grafana (http://localhost:3000) the **Storico** row at the bottom of the Apiary
+dashboard shows daily weight, outdoor temperature (daily mean, with dashed min/max)
+and daily flight activity over the last 12 months, whatever the time picker says;
+it follows the `Arnia` selector.
