@@ -12,8 +12,6 @@ from .store import Store
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - backfill - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-PROFILES_PATH = Path(__file__).resolve().parent.parent / "profiles.json"
-
 
 def floor_hour(dt):
     return dt.replace(minute=0, second=0, microsecond=0)
@@ -30,7 +28,7 @@ def run(token):
     hive_ids = [h.strip() for h in os.environ["HIVE_IDS"].split(",") if h.strip()]
     days = int(os.environ.get("BACKFILL_DAYS", "365"))
     seed = int(os.environ.get("BACKFILL_SEED", "42"))
-    profiles = json.loads(PROFILES_PATH.read_text())
+    profiles = json.loads(Path(os.environ["PROFILES_PATH"]).read_text())
 
     started = time.monotonic()
     store = Store(url, org, bucket, token)
@@ -57,8 +55,8 @@ def run(token):
     for hive_id in hive_ids:
         value = store.first_weight_since(hive_id, session_start) if session_start else None
         if value is None:
-            value = model.simulator_initial_weight(hive_id)
-            origin = "simulator formula"
+            value = model.initial_weight(model.resolve_profile(profiles, hive_id))
+            origin = "profile: tare + reserves"
         else:
             origin = "first live reading"
         anchors[hive_id] = value

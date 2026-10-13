@@ -24,8 +24,11 @@ services:
       MQTT_HOST: mosquitto
       MQTT_PORT: 1883
       HIVE_IDS: *hive-ids
+      PROFILES_PATH: /config/profiles.json
       TICK_SECONDS: 5
       SIM_MINUTES_PER_TICK: 15
+    volumes:
+      - ./simulator/profiles.json:/config/profiles.json:ro
     restart: unless-stopped
 
   # One-shot: writes a year of synthetic history before the live simulator starts
@@ -41,8 +44,11 @@ services:
       INFLUXDB_BUCKET: ${INFLUXDB_BUCKET:?copy .env.example to .env}
       INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:?copy .env.example to .env}
       HIVE_IDS: *hive-ids
+      PROFILES_PATH: /config/profiles.json
       BACKFILL_DAYS: 365
       BACKFILL_SEED: 42
+    volumes:
+      - ./simulator/profiles.json:/config/profiles.json:ro
     restart: "no"
 
   influxdb:

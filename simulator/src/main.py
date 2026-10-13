@@ -1,7 +1,9 @@
+import json
 import os
 import signal
 import logging
 import time
+from pathlib import Path
 from .hive import Hive
 
 logging.basicConfig(
@@ -20,6 +22,8 @@ def main():
     sim_minutes_per_tick = int(os.getenv("SIM_MINUTES_PER_TICK", "15"))
 
     hive_ids = [hid.strip() for hid in hive_ids_str.split(",")]
+    # Shared with the backfill: one profile per hive, "default" for the ones not listed
+    profiles = json.loads(Path(os.environ["PROFILES_PATH"]).read_text())
 
     logger.info(
         f"Starting simulator with {len(hive_ids)} hives: {hive_ids}"
@@ -33,7 +37,8 @@ def main():
     hives = []
     for hive_id in hive_ids:
         try:
-            hive = Hive(hive_id, mqtt_host=mqtt_host, mqtt_port=mqtt_port)
+            profile = {**profiles["default"], **profiles["hives"].get(hive_id, {})}
+            hive = Hive(hive_id, profile, mqtt_host=mqtt_host, mqtt_port=mqtt_port)
             hives.append(hive)
             time.sleep(0.5)  # Stagger connections
         except Exception as e:

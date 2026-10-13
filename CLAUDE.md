@@ -61,7 +61,8 @@ Container Docker separati, orchestrati con un unico `docker-compose.yml`:
   (non a un valore fisso). A riposo
   il rumore è tarato per non far mai scattare le soglie del loop: gli
   attuatori intervengono solo se l'ambiente viene perturbato. Peso iniziale
-  diverso per arnia, deterministico dall'id (`zlib.crc32`, 40–55 kg). Le
+  di ogni arnia = `tare_kg + reserves_kg` dal suo profilo in
+  `simulator/profiles.json` (`default` se non elencata). Le
   perturbazioni (scostamento della temperatura esterna, umidità extra,
   attività di volo, evento sciamatura) agiscono sulle CAUSE, mai sui valori
   misurati, e arrivano dal canale `sim/` descritto sotto. Deve pubblicare sugli stessi
@@ -99,14 +100,17 @@ Container Docker separati, orchestrati con un unico `docker-compose.yml`:
   (8760 punti per serie), stesso schema dei dati live, seed fisso
   (`BACKFILL_SEED=42`) e chiavi dei numeri casuali legate alla data
   assoluta, quindi stessa data → stessi valori a ogni esecuzione. Il peso
-  è ancorato (traslazione costante) al peso da cui parte il live, così
-  storico e live si raccordano; la formula iniziale del simulatore è
-  replicata in `backfill/src/model.py` e le due devono restare allineate.
+  è ancorato (traslazione costante) al peso da cui parte il live (primo
+  peso della sessione in corso, altrimenti tara + riserve del profilo), così
+  storico e live si raccordano senza formule replicate.
   Il generatore è strutturato sulle quattro componenti della lezione 10
   (`trend_component`, `seasonal_component`, `cyclical_component`,
-  `irregular_component`). Profili per arnia in `backfill/profiles.json`,
-  con una `tara` (peso di arnia vuota + api): riserve = peso − tara, serve
-  al forecasting. I dati live hanno timestamp reali (con fisica accelerata),
+  `irregular_component`). Profili per arnia in `simulator/profiles.json`
+  (unica fonte di verità, montato in sola lettura in simulatore e backfill
+  via `PROFILES_PATH`): `tare_kg` (arnia vuota + api; una colonia debole ha
+  meno api, quindi tara più bassa), `reserves_kg` (riserve ATTUALI, a inizio
+  live) e i parametri del backfill. Riserve = peso − tara, serve al
+  forecasting; peso iniziale = tara + riserve. I dati live hanno timestamp reali (con fisica accelerata),
   il backfill scrive lo storico nel passato fino ad "adesso".
 - **Soglie/configurazione**: file JSON per arnia, ripubblicato da
   Node-RED come messaggio MQTT *retained* su `apiary/{hive_id}/config`.
@@ -279,8 +283,9 @@ registra un Last Will `offline` (retained) e pubblica `online`
   presenti.
 - **Step 8 — completato**: perturbazioni del simulatore e console web.
   Simulatore: fisica ricalibrata (termoregolazione della colonia, rumore
-  ridotto, fan che abbassa l'umidità di 13 punti, peso iniziale per arnia da
-  `zlib.crc32`), perturbazioni per arnia via `sim/{hive_id}/perturbation/set`
+  ridotto, fan che abbassa l'umidità di 13 punti, peso iniziale per arnia;
+  dallo Step 10 viene dai profili in `simulator/profiles.json`),
+  perturbazioni per arnia via `sim/{hive_id}/perturbation/set`
   (merge parziale + clamp) con stato retained su `.../perturbation/state`
   pubblicato anche all'avvio, evento `swarm` su `sim/{hive_id}/event` (−2.5 kg
   in 3 tick), dispatch dei messaggi per topic. Node-RED: aggiunto
@@ -327,13 +332,15 @@ registra un Last Will `offline` (retained) e pubblica `online`
   Fine dello storico = inizio della sessione live in corso (telemetry più
   recente di 8 s, la sessione non si tocca) oppure "adesso"; delete di tutto
   `telemetry` precedente e write orario (8760 punti per serie, 2 arnie x 6
-  sensori), peso ancorato al primo peso live o alla formula del simulatore
+  sensori), peso ancorato al primo peso live o a tara + riserve del profilo
   (±0.1 kg). Modello per componenti della lezione 10, meteo da catena di
   Markov (giorni buoni/brutti), calendario apistico (raccolto maggio-luglio,
   smielatura a metà luglio, nutrizione a metà settembre, consumo da ottobre).
-  Profili in `backfill/profiles.json`: hive-01 forte (smielatura 12 kg,
-  riserve finali 19.4 kg), hive-02 debole (6 kg, riserve 8.0 kg, tara 34.5 kg
-  perché il peso finale è fissato dall'ancoraggio). Grafana: row "Storico"
+  Profili condivisi in `simulator/profiles.json` (montato in sola lettura
+  in simulatore e backfill, `PROFILES_PATH`), con `tare_kg` e `reserves_kg`
+  (peso iniziale = tara + riserve): hive-01 forte (tara 24.0, riserve 19.5 →
+  43.5 kg, smielatura 12 kg), hive-02 debole (tara 22.0, riserve 8.0 →
+  30.0 kg, smielatura 6 kg; meno api, quindi tara più bassa). Grafana: row "Storico"
   con peso, temperatura esterna (media, min e max giornalieri) e voli
   (media x 24, indipendente dalla risoluzione) sugli ultimi 12 mesi, con
   relative time override. Verificati conteggi, continuità del peso (buco

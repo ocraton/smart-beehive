@@ -2,7 +2,6 @@ import json
 import math
 import logging
 import random
-import zlib
 from datetime import datetime, timezone
 from .mqtt_client import MqttClient
 
@@ -10,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class Hive:
-    def __init__(self, hive_id, mqtt_host="mosquitto", mqtt_port=1883):
+    def __init__(self, hive_id, profile, mqtt_host="mosquitto", mqtt_port=1883):
         self.hive_id = hive_id
         self.mqtt = MqttClient(
             client_id=hive_id, host=mqtt_host, port=mqtt_port
@@ -19,8 +18,8 @@ class Hive:
         # Physical state
         self.brood_temp = 34.3
         self.humidity = 65.0
-        # Different per hive but stable across restarts (hash() is salted per process)
-        self.weight = 40.0 + (zlib.crc32(hive_id.encode()) % 1500) / 100.0
+        # Empty hive plus bees, plus the stores it has now (simulator/profiles.json)
+        self.weight = profile["tare_kg"] + profile["reserves_kg"]
         self.ext_temp = 20.0
         self.ext_hum = 60.0
         self.flights = 0

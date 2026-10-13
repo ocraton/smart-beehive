@@ -283,6 +283,16 @@ def _hive_day(keyed, hive_id, profile, d, wx):
     return out
 
 
+def resolve_profile(profiles, hive_id):
+    """Profile of a hive: the "default" one, overridden by its own entry if it has one."""
+    return {**profiles["default"], **profiles["hives"].get(hive_id, {})}
+
+
+def initial_weight(profile):
+    """Weight the live simulator starts from: empty hive plus bees, plus current reserves."""
+    return profile["tare_kg"] + profile["reserves_kg"]
+
+
 def generate(profiles, hive_ids, first_hour, last_hour, seed):
     """Hourly series for every hive: {hive_id: {sensor: [(epoch_s, value), ...]}}.
 
@@ -290,11 +300,7 @@ def generate(profiles, hive_ids, first_hour, last_hour, seed):
     """
     keyed = Keyed(seed)
     chain = WeatherChain(keyed)
-    resolved = {}
-    for hive_id in hive_ids:
-        profile = dict(profiles["default"])
-        profile.update(profiles["hives"].get(hive_id, {}))
-        resolved[hive_id] = profile
+    resolved = {hive_id: resolve_profile(profiles, hive_id) for hive_id in hive_ids}
     result = {h: {sensor: [] for sensor in SENSORS} for h in hive_ids}
     levels = {h: 0.0 for h in hive_ids}
 
@@ -320,14 +326,3 @@ def anchor_weight(points, anchor_kg):
     """Translate the weight curve by a constant so that its last value equals anchor_kg."""
     shift = anchor_kg - points[-1][1]
     return [(t, v + shift) for t, v in points]
-
-
-def simulator_initial_weight(hive_id):
-    """Initial weight of the live simulator.
-
-    MUST stay aligned with the formula in simulator/src/hive.py (Hive.__init__): the last
-    backfilled weight is anchored to it so that history and live data join seamlessly.
-    """
-    import zlib
-
-    return 40.0 + (zlib.crc32(hive_id.encode()) % 1500) / 100.0

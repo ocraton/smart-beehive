@@ -333,7 +333,7 @@ What it does, in order:
    ends where the session starts and the session is never touched; otherwise it ends now.
 2. Generates the year (about 1.7 s) and anchors every hive's weight so that the last
    historical value equals the weight the live simulator starts from (first live
-   reading, or the simulator formula `40 + crc32(hive_id) % 1500 / 100`).
+   reading, or `tare_kg + reserves_kg` of the hive profile).
 3. Deletes all `telemetry` before the end (old test sessions at 5 s resolution would
    skew the averages; `actuator` and `alert` are not touched), then writes the points
    and checks the counts. Exit code 0 only if everything matches, so the simulator
@@ -350,14 +350,19 @@ docker compose logs backfill     # interval, points per hive, duration, anchors
 session in progress is detected and kept, only the history before it is rewritten and
 the simulator is not restarted.
 
-**Profiles.** `backfill/profiles.json` defines one profile per hive (plus `default`
-for hives not listed): `strength`, `flow_scale`, `consumption_scale`,
-`honey_harvest_kg` / `harvest_day`, `autumn_feeding_kg` and `tare_kg`. The tare is
-the weight of the empty hive plus bees: **reserves = weight - tare_kg**, which the
-forecasting step will use to estimate when the stores run out. `hive-01` is strong
-(harvest ~12 kg on 15 July, 19.4 kg of reserves at the end), `hive-02` is weak
-(~6 kg on 18 July, 8.0 kg of reserves: at about 1.5 kg/month they would run out
-around March).
+**Profiles.** `simulator/profiles.json` is the single source of truth for the
+simulated hives: it is mounted read-only in both the `simulator` and the `backfill`
+(`PROFILES_PATH=/config/profiles.json`). It defines one profile per hive (plus
+`default` for hives not listed): `tare_kg`, `reserves_kg`, `strength`, `flow_scale`,
+`consumption_scale`, `honey_harvest_kg` / `harvest_day` and `autumn_feeding_kg`. The
+tare is the weight of the empty hive plus bees (a weaker colony has fewer bees, so a
+lower tare); `reserves_kg` are the CURRENT stores, when the live simulation starts.
+**Initial weight = tare_kg + reserves_kg**, and **reserves = weight - tare_kg**, which
+the forecasting step will use to estimate when the stores run out. `hive-01` is strong
+(tare 24.0 + reserves 19.5 = 43.5 kg, harvest ~12 kg on 15 July), `hive-02` is weak
+(tare 22.0 + reserves 8.0 = 30.0 kg, harvest ~6 kg on 18 July: at about 1.5 kg/month
+its stores would run out around March). Edit the file and restart the stack
+(`docker compose down && docker compose up -d`) to change them.
 
 **Model.** `backfill/src/model.py` is organised on the four components of lesson 10:
 `trend_component` (forager population, comb), `seasonal_component` (annual

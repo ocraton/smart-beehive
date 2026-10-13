@@ -1,6 +1,8 @@
 {
     "_notes": {
-        "tare_kg": "Weight of the empty hive plus bees. Reserves (honey and pollen stores) = weight - tare_kg: the forecasting step uses it to estimate when the stores run out.",
+        "_shared": "Single source of truth for the simulated hives, mounted read-only (PROFILES_PATH) in both the simulator and the backfill. The simulator only reads tare_kg and reserves_kg; the remaining fields drive the backfill.",
+        "tare_kg": "Weight of the empty hive plus bees: a weaker colony has fewer bees, hence a lower tare. Reserves (honey and pollen stores) = weight - tare_kg: the forecasting step uses it to estimate when the stores run out.",
+        "reserves_kg": "CURRENT reserves, i.e. when the live simulation starts. Initial weight of the live hive = tare_kg + reserves_kg; the backfill anchors the end of the history to the same value.",
         "strength": "Colony strength, 1.0 = strong. Scales foraging, flights and nectar income.",
         "flow_scale": "Scales the nectar income of the hive (quality of the foraging area).",
         "consumption_scale": "Scales the colony's own consumption of stores.",
@@ -10,6 +12,7 @@
     "default": {
         "strength": 0.8,
         "tare_kg": 24.0,
+        "reserves_kg": 14.0,
         "flow_scale": 0.7,
         "consumption_scale": 0.92,
         "honey_harvest_kg": 8.0,
@@ -20,6 +23,7 @@
         "hive-01": {
             "strength": 1.0,
             "tare_kg": 24.0,
+            "reserves_kg": 19.5,
             "flow_scale": 0.75,
             "consumption_scale": 1.0,
             "honey_harvest_kg": 12.0,
@@ -28,7 +32,8 @@
         },
         "hive-02": {
             "strength": 0.6,
-            "tare_kg": 34.5,
+            "tare_kg": 22.0,
+            "reserves_kg": 8.0,
             "flow_scale": 0.7,
             "consumption_scale": 0.85,
             "honey_harvest_kg": 6.0,
