@@ -1,0 +1,1010 @@
+{
+  "uid": "apiary-forecast",
+  "title": "Apiary - Previsioni",
+  "tags": [
+    "beehive"
+  ],
+  "timezone": "browser",
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "5m",
+  "schemaVersion": 41,
+  "time": {
+    "from": "now-120d",
+    "to": "now+180d"
+  },
+  "links": [
+    {
+      "title": "Apiary (live)",
+      "type": "link",
+      "icon": "dashboard",
+      "url": "/d/apiary",
+      "includeVars": true,
+      "keepTime": false,
+      "asDropdown": false,
+      "tags": [],
+      "targetBlank": false,
+      "tooltip": ""
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "name": "Smielatura ottimale (stimata)",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influxdb-beehive"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "green",
+        "target": {
+          "refId": "Anno",
+          "query": "from(bucket: \"beehive\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"forecast\" and r.kind == \"harvest\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"hive_id\"])\n  |> sort(columns: [\"_time\"])\n  |> tail(n: 1)\n  |> filter(fn: (r) => exists r.optimal_ts)\n  |> map(fn: (r) => ({_time: time(v: r.optimal_ts * 1000000000), text: \"Ottimale stimata: \" + r.hive_id, title: \"Smielatura ottimale (stimata)\", tags: r.hive_id}))"
+        }
+      },
+      {
+        "name": "Smielatura reale",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influxdb-beehive"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "red",
+        "target": {
+          "refId": "Anno",
+          "query": "from(bucket: \"beehive\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"forecast\" and r.kind == \"harvest\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"hive_id\"])\n  |> sort(columns: [\"_time\"])\n  |> tail(n: 1)\n  |> filter(fn: (r) => exists r.actual_harvest_ts)\n  |> map(fn: (r) => ({_time: time(v: r.actual_harvest_ts * 1000000000), text: \"Smielatura reale: \" + r.hive_id, title: \"Smielatura reale\", tags: r.hive_id}))"
+        }
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "hive_id",
+        "label": "Arnia",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influxdb-beehive"
+        },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"beehive\", tag: \"hive_id\")",
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "refresh": 1,
+        "sort": 1,
+        "hide": 0,
+        "options": [],
+        "regex": ""
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Riserve e previsione",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Riserve e previsione",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-beehive"
+      },
+      "description": "Riserve = peso - tara. Previsione lineare sugli ultimi 30 giorni di riserve lisciate (media mobile a 7 giorni).",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "masskg",
+          "decimals": 1,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^hive-01.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^hive-02.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "${__field.labels.hive_id} - reali"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "${__field.labels.hive_id} - lisciate (7 giorni)"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "${__field.labels.hive_id} - previsione lineare"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "D"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "${__field.labels.hive_id} - soglia critica"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    4,
+                    4
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-beehive"
+          },
+          "query": "from(bucket: \"beehive\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"reserves\" and r._field == \"actual\")\n    |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> keep(columns: [\"_time\", \"_value\", \"hive_id\"])"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-beehive"
+          },
+          "query": "from(bucket: \"beehive\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"reserves\" and r._field == \"smoothed\")\n    |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> keep(columns: [\"_time\", \"_value\", \"hive_id\"])"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-beehive"
+          },
+          "query": "from(bucket: \"beehive\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"forecast_reserves\" and r._field == \"reserves_kg\")\n    |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> keep(columns: [\"_time\", \"_value\", \"hive_id\"])"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-beehive"
+          },
+          "query": "crit = from(bucket: \"beehive\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"forecast\" and r.kind == \"depletion\" and r._field == \"critical_reserves_kg\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> group(columns: [\"hive_id\"])\n  |> last()\n  |> keep(columns: [\"hive_id\", \"_value\"])\n  |> rename(columns: {_value: \"critical\"})\ntimes = from(bucket: \"beehive\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => (r._measurement == \"reserves\" and r._field == \"smoothed\") or r._measurement == \"forecast_reserves\")\n  |> keep(columns: [\"_time\", \"hive_id\"])\n  |> group(columns: [\"hive_id\"])\n  |> unique(column: \"_time\")\njoin(tables: {t: times, c: crit}, on: [\"hive_id\"])\n  |> map(fn: (r) => ({_time: r._time, _value: r.critical, hive_id: r.hive_id}))\n  |> group(columns: [\"hive_id\"])\n  |> sort(columns: [\"_time\"])"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "row",
+      "title": "Esaurimento delle scorte",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 11
+      },
+      "panels": []
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Giorni all'esaurimento",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-beehive"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 12
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Nessun esaurimento previsto",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "days_to_critical"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: giorni"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "values": true,
+          "calcs": [],
+          "fields": "/^days_to_critical$/"
+        },
+        "textMode": "value_and_name",
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-beehive"
+          },
+          "query": "from(bucket: \"beehive\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"forecast\" and r.kind == \"depletion\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"hive_id\"])\n  |> sort(columns: [\"_time\"])\n  |> tail(n: 1)\n  |> group()\n  |> keep(columns: [\"hive_id\", \"days_to_critical\"])"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Data di esaurimento",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-beehive"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 12
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Nessun esaurimento previsto",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "critical_date_ms"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "time: DD/MM/YYYY"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "values": true,
+          "calcs": [],
+          "fields": "/^critical_date_ms$/"
+        },
+        "textMode": "value_and_name",
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-beehive"
+          },
+          "query": "import \"internal/debug\"\nfrom(bucket: \"beehive\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"forecast\" and r.kind == \"depletion\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"hive_id\"])\n  |> sort(columns: [\"_time\"])\n  |> tail(n: 1)\n  |> group()\n  |> map(fn: (r) => ({r with critical_date_ms: if exists r.critical_date_ts then float(v: r.critical_date_ts) * 1000.0 else debug.null(type: \"float\")}))\n  |> keep(columns: [\"hive_id\", \"critical_date_ms\"])"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Consumo",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-beehive"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 12
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "n/d",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 3
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "consumption_kg_day"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: kg/giorno"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "values": true,
+          "calcs": [],
+          "fields": "/^consumption_kg_day$/"
+        },
+        "textMode": "value_and_name",
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-beehive"
+          },
+          "query": "from(bucket: \"beehive\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"forecast\" and r.kind == \"depletion\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"hive_id\"])\n  |> sort(columns: [\"_time\"])\n  |> tail(n: 1)\n  |> group()\n  |> keep(columns: [\"hive_id\", \"consumption_kg_day\"])"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Affidabilità della retta (R²)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-beehive"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 12
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "n/d",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "r2"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "values": true,
+          "calcs": [],
+          "fields": "/^r2$/"
+        },
+        "textMode": "value_and_name",
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-beehive"
+          },
+          "query": "from(bucket: \"beehive\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"forecast\" and r.kind == \"depletion\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"hive_id\"])\n  |> sort(columns: [\"_time\"])\n  |> tail(n: 1)\n  |> group()\n  |> keep(columns: [\"hive_id\", \"r2\"])"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "Smielatura",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Smielatura: momento ottimale e smielatura reale",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-beehive"
+      },
+      "description": "Il momento ottimale è stimato usando solo i giorni PRIMA della smielatura reale (il modello non vede il calo). Miele estraibile = peso - tara - scorte da lasciare per l'inverno.",
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "-",
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "optimal_ms"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "time: DD/MM/YYYY"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "actual_ms"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "time: DD/MM/YYYY"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "delta_days"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: giorni"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "harvestable_kg"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "masskg"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "actual_harvest_kg"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "masskg"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "ok": {
+                        "text": "Calcolato",
+                        "index": 0
+                      },
+                      "flow_active_at_harvest": {
+                        "text": "Flusso ancora attivo alla smielatura reale",
+                        "index": 1
+                      },
+                      "in_progress": {
+                        "text": "Stagione in corso",
+                        "index": 2
+                      },
+                      "no_flow": {
+                        "text": "Nessun flusso nettarifero rilevato",
+                        "index": 3
+                      },
+                      "no_harvest_yet": {
+                        "text": "Smielatura reale non ancora avvenuta",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "indexByName": {
+              "hive_id": 0,
+              "optimal_ms": 1,
+              "actual_ms": 2,
+              "delta_days": 3,
+              "harvestable_kg": 4,
+              "actual_harvest_kg": 5,
+              "status": 6
+            },
+            "renameByName": {
+              "hive_id": "Arnia",
+              "optimal_ms": "Data ottimale (stimata)",
+              "actual_ms": "Data reale",
+              "delta_days": "Differenza (giorni)",
+              "harvestable_kg": "Miele estraibile",
+              "actual_harvest_kg": "Miele realmente tolto",
+              "status": "Esito"
+            }
+          }
+        }
+      ],
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-beehive"
+          },
+          "query": "import \"internal/debug\"\nfrom(bucket: \"beehive\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"forecast\" and r.kind == \"harvest\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"hive_id\"])\n  |> sort(columns: [\"_time\"])\n  |> tail(n: 1)\n  |> group()\n  |> map(fn: (r) => ({r with\n      optimal_ms: if exists r.optimal_ts then float(v: r.optimal_ts) * 1000.0 else debug.null(type: \"float\"),\n      actual_ms: if exists r.actual_harvest_ts then float(v: r.actual_harvest_ts) * 1000.0 else debug.null(type: \"float\")}))\n  |> keep(columns: [\"hive_id\", \"optimal_ms\", \"actual_ms\", \"delta_days\", \"harvestable_kg\", \"actual_harvest_kg\", \"status\"])"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Peso - ultimi 12 mesi",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-beehive"
+      },
+      "timeFrom": "12M",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "${__field.labels.hive_id}",
+          "unit": "masskg",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^hive-01.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^hive-02.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-beehive"
+          },
+          "query": "from(bucket: \"beehive\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.sensor == \"weight\")\n    |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> aggregateWindow(every: 1d, fn: mean, createEmpty: false, timeSrc: \"_start\")\n  |> keep(columns: [\"_time\", \"_value\", \"hive_id\"])"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "row",
+      "title": "Backtest",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "panels": []
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Backtest sull'inverno passato (riserve lisciate a +30, +60, +90 giorni)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-beehive"
+      },
+      "description": "Origini settimanali da novembre a inizio febbraio; per ogni origine si usano solo i dati fino a quel giorno. Bias = previsto - reale: positivo significa previsione ottimista (più riserve di quelle reali).",
+      "gridPos": {
+        "h": 13,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "method"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "naive": {
+                        "text": "Baseline (le riserve restano uguali)",
+                        "index": 0
+                      },
+                      "linear": {
+                        "text": "Lineare (retta degli ultimi 30 giorni)",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "mae_kg"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: kg"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "bias_kg"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: kg"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "indexByName": {
+              "hive_id": 0,
+              "method": 1,
+              "horizon_days": 2,
+              "mae_kg": 3,
+              "bias_kg": 4,
+              "n": 5
+            },
+            "renameByName": {
+              "hive_id": "Arnia",
+              "method": "Metodo",
+              "horizon_days": "Orizzonte (giorni)",
+              "mae_kg": "MAE (errore assoluto medio)",
+              "bias_kg": "Bias (previsto - reale)",
+              "n": "Origini"
+            }
+          }
+        }
+      ],
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-beehive"
+          },
+          "query": "from(bucket: \"beehive\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"backtest\")\n    |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"hive_id\", \"method\", \"horizon_days\"])\n  |> sort(columns: [\"_time\"])\n  |> tail(n: 1)\n  |> group()\n  |> keep(columns: [\"hive_id\", \"method\", \"horizon_days\", \"mae_kg\", \"bias_kg\", \"n\"])\n  |> sort(columns: [\"hive_id\", \"method\", \"horizon_days\"])"
+        }
+      ]
+    }
+  ]
+}

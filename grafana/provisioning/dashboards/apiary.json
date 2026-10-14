@@ -119,7 +119,20 @@
       }
     ]
   },
-  "links": [],
+  "links": [
+    {
+      "title": "Previsioni",
+      "type": "link",
+      "icon": "dashboard",
+      "url": "/d/apiary-forecast",
+      "includeVars": true,
+      "keepTime": false,
+      "asDropdown": false,
+      "tags": [],
+      "targetBlank": false,
+      "tooltip": ""
+    }
+  ],
   "panels": [
     {
       "id": 1,

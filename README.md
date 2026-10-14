@@ -42,6 +42,7 @@ sudo chown -R 1000:1000 nodered/data
 | simulator | —                       | publishes telemetry for `HIVE_IDS`         |
 | influxdb  | http://localhost:8086   | login with `INFLUXDB_USERNAME`/`PASSWORD`  |
 | nodered   | http://localhost:1880   | flows saved to `nodered/data/flows.json`   |
+| analytics | —                       | forecasts every 10 min, writes them to InfluxDB |
 | grafana   | http://localhost:3000   | Apiary dashboard, no login (anonymous viewer) |
 
 ## Verification
@@ -403,3 +404,79 @@ In Grafana (http://localhost:3000) the **Storico** row at the bottom of the Apia
 dashboard shows daily weight, outdoor temperature (daily mean, with dashed min/max)
 and daily flight activity over the last 12 months, whatever the time picker says;
 it follows the `Arnia` selector.
+
+## Step 11 verification
+
+The `analytics` service (`analytics/`) is the batch-processing pattern of the course:
+it **reads** the daily weight of the last year from InfluxDB (aggregated by the
+database with `aggregateWindow(every: 1d, fn: mean)`), **forecasts** with the
+techniques of lesson 10 written by hand with numpy (simple moving average, simple
+exponential smoothing, least-squares line with R²), and **writes** the results back to
+InfluxDB. It runs at startup and then every `ANALYTICS_INTERVAL_SECONDS` (600 s):
+
+```bash
+docker compose logs analytics     # hives, main results, duration of each run
+```
+
+The per-hive settings come from the retained `apiary/+/config` messages (section
+`stores`: `tare_kg`, `critical_reserves_kg`, `winter_reserves_kg`, from
+`nodered/data/config/thresholds.json`). A hive without `stores` is skipped with a warning.
+The tare also exists in `simulator/profiles.json` (the simulated physical hive): with real
+hives only the `stores` one would exist, and the two values must match.
+
+| Measurement | Tags | Fields |
+|-------------|------|--------|
+| `reserves` | `hive_id` | `actual`, `smoothed` (daily, midnight UTC: rewritten at every run) |
+| `forecast_reserves` | `hive_id`, `method=linear` | `reserves_kg` (daily, FUTURE timestamps; the previous projection is deleted first) |
+| `forecast` | `hive_id`, `kind=depletion` | `reserves_kg`, `consumption_kg_day`, `r2`, `days_to_critical`, `critical_date_ts`, `critical_reserves_kg` |
+| `forecast` | `hive_id`, `kind=harvest` | `optimal_ts`, `harvestable_kg`, `actual_harvest_ts`, `actual_harvest_kg`, `delta_days`, `status` |
+| `backtest` | `hive_id`, `method`, `horizon_days` | `mae_kg`, `bias_kg`, `n` |
+
+**Depletion of the stores.** Reserves = weight - tare, smoothed with a 7-day moving
+average; a line is fitted on the last 30 days of smoothed reserves: consumption = -slope,
+days to the critical threshold = (reserves - threshold) / consumption. A slope above
+-0.01 kg/day means "stable or growing" (no date). If the window contains a day with a gain
+over +0.3 kg (autumn feeding, nectar flow) the line starts after it, when at least 14 days
+remain: otherwise the +2 kg of September make the line flat.
+
+**Harvest.** The real harvest is the run of consecutive days losing more than 0.5 kg
+with at least one over 3 kg. The optimal moment is searched in the days BEFORE it: after
+the peak of the nectar flow, the first day from which the exponentially smoothed daily gain
+(alpha 0.3) stays under +0.05 kg/day for 3 days. Extractable honey = weight - tare - winter
+reserves. If the flow is still on the day before the real harvest no optimal date exists
+(status "flow active at harvest").
+
+**Backtest.** Weekly origins from 1 November to 1 February of the last complete winter;
+at each origin only the data up to that day is used to forecast the smoothed reserves at
++30, +60 and +90 days, with a naive baseline (reserves stay as they are) and the line.
+Bias = predicted - actual (positive: optimistic).
+
+Run the unit tests (pure functions: moving average, smoothing, regression with R², days to
+depletion, optimal harvest on a hand-made series, backtest):
+
+```bash
+docker compose run --rm --no-deps analytics python -m pytest -q
+```
+
+Read the **Apiary - Previsioni** dashboard (http://localhost:3000, link "Previsioni" on the
+Apiary dashboard and "Apiary (live)" back; default range from now-120d to now+180d):
+
+- *Riserve e previsione*: actual (thin) and smoothed (thick) reserves, the linear
+  projection (dashed, into the future) and the critical threshold (red dashed). Vertical
+  lines are the optimal and the real harvest.
+- *Esaurimento delle scorte*: days to the critical threshold, its date, consumption and R²
+  of the line, per hive ("Nessun esaurimento previsto" if the reserves are stable).
+- *Smielatura*: estimated optimal date against the real one, difference in days and
+  extractable honey; below, the weight of the last 12 months.
+- *Backtest*: MAE and bias per hive, method and horizon.
+
+Check the stores written for a hive and that a second run does not duplicate anything:
+
+```bash
+set -a; . ./.env; set +a
+docker compose exec influxdb influx query --org beehive --token "$INFLUXDB_TOKEN" \
+ 'from(bucket:"beehive") |> range(start: -400d, stop: 400d)
+  |> filter(fn:(r)=>r._measurement=="reserves" or r._measurement=="forecast_reserves")
+  |> group(columns:["_measurement"]) |> count() |> group() |> keep(columns:["_measurement","_value"])'
+```
+

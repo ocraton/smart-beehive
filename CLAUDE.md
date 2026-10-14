@@ -80,11 +80,41 @@ Container Docker separati, orchestrati con un unico `docker-compose.yml`:
   `telemetry`, tag `hive_id` e `sensor` (indicizzati, per filtrare),
   field `value` (il valore misurato), timestamp preso dal campo `ts`
   del payload (precisione in secondi).
-- **Analytics** (Python, schedulato): legge lo storico da InfluxDB,
-  applica tecniche della lezione 10 (media mobile, exponential
-  smoothing, regressione lineare) e riscrive previsioni su InfluxDB
-  (es. data stimata di esaurimento scorte, momento ottimale di
-  smielatura).
+- **Analytics** (Python, cartella `analytics/`, servizio `analytics`):
+  pattern di batch processing delle slide, read da InfluxDB → aggregate →
+  logica → write su InfluxDB. Esegue un'analisi completa all'avvio e poi ogni
+  `ANALYTICS_INTERVAL_SECONDS` (600 s); `depends_on` influxdb healthy, backfill
+  completato, mosquitto. Il peso giornaliero dell'ultimo anno è aggregato dal
+  database (Flux `aggregateWindow(every: 1d, fn: mean)`); riserve = peso −
+  `tare_kg`. La config per arnia (sezione `stores`) viene letta dai messaggi
+  retained di `apiary/+/config`: ci si connette, si raccolgono per 5 s e ci si
+  disconnette; al primo run si aspetta (max 60 s) che Node-RED l'abbia
+  ripubblicata con `stores`; un'arnia senza `stores` è saltata con warning.
+  Tecniche scritte a mano con numpy (`forecasting.py`, niente statsmodels):
+  media mobile semplice a 7 giorni, exponential smoothing semplice
+  (α = 0,3 sul guadagno giornaliero), regressione lineare ai minimi quadrati
+  con R². *Analisi A (esaurimento)*: retta sugli ultimi 30 giorni delle riserve
+  lisciate; consumo = −pendenza, giorni = (riserve stimate − soglia critica) /
+  consumo; "stabili" se la pendenza è > −0,01 kg/giorno, "ora" se già sotto
+  soglia. Se nella finestra c'è un giorno con guadagno > +0,3 kg (nutrizione o
+  flusso) la retta parte da lì (+6 giorni di media mobile), se restano almeno
+  14 giorni: altrimenti la nutrizione di settembre rende piatta la retta.
+  *Analisi B (smielatura)*: la smielatura reale è la serie di giorni
+  consecutivi con calo > 0,5 kg di cui uno > 3 kg; il momento ottimale è il
+  primo giorno dopo il picco del flusso (guadagno lisciato > +0,15 per ≥ 7
+  giorni) in cui il guadagno lisciato resta < +0,05 per 3 giorni, usando solo
+  i giorni PRIMA della smielatura reale; miele estraibile = peso − tara −
+  `winter_reserves_kg` (min 0). *Backtest*: origini settimanali da novembre
+  a inizio febbraio dell'ultimo inverno completo, previsioni a +30/+60/+90
+  giorni con baseline naive e retta lineare, solo dati fino all'origine, MAE
+  e bias (previsto − reale). Scrive su InfluxDB: `reserves` (tag `hive_id`,
+  field `actual`/`smoothed`, mezzanotte UTC, idempotente), `forecast_reserves`
+  (tag `hive_id`, `method=linear`, field `reserves_kg`, timestamp futuri; la
+  proiezione precedente viene cancellata prima di riscriverla), `forecast`
+  (tag `hive_id`, `kind=depletion|harvest`, un punto per run con tutti i campi
+  del run) e `backtest` (tag `hive_id`, `method`, `horizon_days`; un punto al
+  giorno). Costanti con nome e documentate in `analytics/src/analysis.py`;
+  test pytest delle funzioni pure in `analytics/tests/`.
 - **Grafana**: sola lettura da InfluxDB, dashboard con variabile
   `hive_id`, stato attuatori, alert come annotation.
 - **Tempo simulato**: un servizio one-shot `backfill` (Python, cartella
@@ -127,13 +157,15 @@ apiary/{hive_id}/alerts                          -> anomalie rilevate
 apiary/{hive_id}/config                          -> soglie, retained
 ```
 
-Payload di `config` (JSON, quattro sezioni, tutte obbligatorie):
+Payload di `config` (JSON, cinque sezioni, tutte obbligatorie):
 
 ```json
 {
   "heater":       { "on_below": 32.0, "off_above": 33.5 },
   "fan_temp":     { "on_above": 36.0, "off_below": 34.5 },
   "fan_humidity": { "on_above": 75.0, "off_below": 65.0 },
+  "stores":       { "tare_kg": 24.0, "critical_reserves_kg": 5.0,
+                    "winter_reserves_kg": 15.0 },
   "anomalies": {
     "weight_drop": { "max_drop_kg": 1.5, "window_seconds": 60,
                      "raise_after": 1, "clear_after": 1 },
@@ -145,7 +177,16 @@ Payload di `config` (JSON, quattro sezioni, tutte obbligatorie):
 ```
 
 Le prime tre sezioni servono al control loop, `anomalies` alle regole di
-anomaly detection; ogni tab di Node-RED legge solo le proprie.
+anomaly detection, `stores` al servizio analytics (Control e Anomalies la
+ignorano); ogni consumatore legge solo le proprie. `stores`: `tare_kg` è il
+peso dell'arnia vuota + api come lo conosce l'apicoltore, `critical_reserves_kg`
+la soglia sotto cui la colonia rischia la fame, `winter_reserves_kg` le scorte
+da lasciare all'arnia quando si smiela.
+
+Nota sulla tara: esiste sia in `simulator/profiles.json` (l'arnia fisica
+simulata) sia in `stores.tare_kg` (ciò che l'apicoltore sa della sua arnia).
+Con arnie reali esisterebbe solo quest'ultima; i valori devono coincidere
+(oggi: hive-01 24 kg, hive-02 22 kg).
 
 Payload di `cmd` e `state`: stringa semplice `ON` / `OFF`.
 
@@ -351,6 +392,23 @@ registra un Last Will `offline` (retained) e pubblica `online`
   < 1 h), stagionalità, determinismo, `up -d` a stack avviato e che control
   loop e anomalie funzionano ancora. Analytics/forecasting NON ancora
   presenti.
+- **Step 11 — completato**: servizio `analytics` (Python, numpy, tecniche
+  della lezione 10 a mano) e dashboard Grafana "Apiary - Previsioni" (uid
+  `apiary-forecast`, intervallo di default da now-120d a now+180d, link
+  reciproci con Apiary, che resta la home). Config: nuova sezione `stores` in
+  `thresholds.json` (default 24/5/15 kg, override hive-02 tara 22 kg), validata
+  nella tab Config e ignorata da Control e Anomalies. Il servizio gira all'avvio
+  e ogni 10 minuti: esaurimento delle scorte (retta sugli ultimi 30 giorni, con
+  salto degli eventi di nutrizione), momento ottimale di smielatura sulla
+  stagione passata e backtest sull'inverno passato; scrive `reserves`,
+  `forecast_reserves`, `forecast` e `backtest` (vedi decisione "Analytics").
+  Risultati al 14/10/2026: hive-02 a 8,0 kg di riserve, consumo 0,039
+  kg/giorno, soglia critica fra 77 giorni (30/12/2026); hive-01 a 19,4 kg,
+  consumo 0,030 kg/giorno, soglia fra 483 giorni (il consumo attuale è basso e
+  il metodo lo mantiene costante). Il backtest conferma che la retta batte la
+  baseline e che è ottimista (bias positivo), sempre di più a fine inverno.
+  Dashboard: riserve reali, lisciate, proiezione tratteggiata e soglia critica;
+  stat per arnia; tabella smielatura con annotation sul peso; tabella backtest.
 - **Step successivo**: da concordare con lo sviluppatore — non
   procedere senza il suo via libera esplicito.
 

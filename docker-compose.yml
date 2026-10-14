@@ -51,6 +51,27 @@ services:
       - ./simulator/profiles.json:/config/profiles.json:ro
     restart: "no"
 
+  # Batch processing: reads the history from InfluxDB, forecasts, writes the forecasts back
+  analytics:
+    build: ./analytics
+    container_name: beehive_analytics
+    depends_on:
+      influxdb:
+        condition: service_healthy
+      backfill:
+        condition: service_completed_successfully
+      mosquitto:
+        condition: service_started
+    environment:
+      INFLUXDB_URL: http://influxdb:8086
+      INFLUXDB_ORG: ${INFLUXDB_ORG:?copy .env.example to .env}
+      INFLUXDB_BUCKET: ${INFLUXDB_BUCKET:?copy .env.example to .env}
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:?copy .env.example to .env}
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      ANALYTICS_INTERVAL_SECONDS: 600
+    restart: unless-stopped
+
   influxdb:
     image: influxdb:2.7
     container_name: beehive_influxdb

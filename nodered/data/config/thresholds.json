@@ -3,6 +3,8 @@
     "heater":       { "on_below": 32.0, "off_above": 33.5 },
     "fan_temp":     { "on_above": 36.0, "off_below": 34.5 },
     "fan_humidity": { "on_above": 75.0, "off_below": 65.0 },
+    "stores":       { "tare_kg": 24.0, "critical_reserves_kg": 5.0,
+                      "winter_reserves_kg": 15.0 },
     "anomalies": {
       "weight_drop": { "max_drop_kg": 1.5, "window_seconds": 60,
                        "raise_after": 1, "clear_after": 1 },
@@ -12,6 +14,7 @@
     }
   },
   "hives": {
-    "hive-02": { "heater": { "on_below": 31.5, "off_above": 33.0 } }
+    "hive-02": { "heater": { "on_below": 31.5, "off_above": 33.0 },
+                 "stores": { "tare_kg": 22.0 } }
   }
 }
