@@ -34,8 +34,8 @@
             "strength": 0.6,
             "tare_kg": 22.0,
             "reserves_kg": 8.0,
-            "flow_scale": 0.7,
-            "consumption_scale": 0.85,
+            "flow_scale": 0.55,
+            "consumption_scale": 0.55,
             "honey_harvest_kg": 6.0,
             "autumn_feeding_kg": 2.0,
             "harvest_day": "07-18"

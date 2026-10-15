@@ -45,7 +45,7 @@ services:
       INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:?copy .env.example to .env}
       HIVE_IDS: *hive-ids
       PROFILES_PATH: /config/profiles.json
-      BACKFILL_DAYS: 365
+      BACKFILL_DAYS: 730
       BACKFILL_SEED: 42
     volumes:
       - ./simulator/profiles.json:/config/profiles.json:ro

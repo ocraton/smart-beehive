@@ -75,9 +75,9 @@ class Store:
             result[hive_id] = (days, weights)
         return result
 
-    def delete_projection(self, hive_id, start, stop):
-        """Remove the previous projection of a hive, so no stale tail is left."""
-        predicate = f'_measurement="forecast_reserves" AND hive_id="{hive_id}"'
+    def delete_projection(self, hive_id, method, start, stop):
+        """Remove the previous projection of a hive for one method, so no stale tail is left."""
+        predicate = f'_measurement="forecast_reserves" AND hive_id="{hive_id}" AND method="{method}"'
         self.client.delete_api().delete(start, stop, predicate, bucket=self.bucket, org=self.org)
 
     def write(self, lines):

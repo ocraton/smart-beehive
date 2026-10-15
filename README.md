@@ -10,7 +10,7 @@ cp .env.example .env    # then edit the values (never commit .env)
 docker compose up -d --build
 ```
 
-Startup order: `influxdb` (healthy) → `backfill` (writes one year of history and
+Startup order: `influxdb` (healthy) → `backfill` (writes two years of history and
 exits) → `simulator` (starts only when the backfill has completed successfully).
 The hives are defined once, in `x-hive-ids` at the top of `docker-compose.yml`, and
 shared by `simulator` and `backfill`.
@@ -327,7 +327,7 @@ docker compose exec influxdb influx query --org beehive --token "$INFLUXDB_TOKEN
 ## Step 10 verification
 
 The one-shot `backfill` service (`backfill/`) runs at every stack start, before the
-simulator, and fills InfluxDB with one year (`BACKFILL_DAYS=365`) of **hourly**
+simulator, and fills InfluxDB with two years (`BACKFILL_DAYS=730`) of **hourly**
 synthetic telemetry per hive, same schema as the live data (`telemetry`, tags
 `hive_id` + `sensor`, field `value`, timestamps in seconds). It is deterministic:
 `BACKFILL_SEED=42` always gives the same values for the same date.
@@ -375,7 +375,7 @@ temperature, daylight, nectar flow, brood season, consumption),
 `cyclical_component` (Markov chain of good/bad weather days) and
 `irregular_component` (noise, honey harvest, autumn feeding).
 
-Checks (expected: 8760 points per series, 12 series):
+Checks (expected: 17520 points per series with `BACKFILL_DAYS=730`, 12 series):
 
 ```bash
 set -a; . ./.env; set +a
@@ -408,7 +408,7 @@ it follows the `Arnia` selector.
 ## Step 11 verification
 
 The `analytics` service (`analytics/`) is the batch-processing pattern of the course:
-it **reads** the daily weight of the last year from InfluxDB (aggregated by the
+it **reads** the daily weight of the last two years from InfluxDB (aggregated by the
 database with `aggregateWindow(every: 1d, fn: mean)`), **forecasts** with the
 techniques of lesson 10 written by hand with numpy (simple moving average, simple
 exponential smoothing, least-squares line with R²), and **writes** the results back to
@@ -428,9 +428,11 @@ hives only the `stores` one would exist, and the two values must match.
 |-------------|------|--------|
 | `reserves` | `hive_id` | `actual`, `smoothed` (daily, midnight UTC: rewritten at every run) |
 | `forecast_reserves` | `hive_id`, `method=linear` | `reserves_kg` (daily, FUTURE timestamps; the previous projection is deleted first) |
-| `forecast` | `hive_id`, `kind=depletion` | `reserves_kg`, `consumption_kg_day`, `r2`, `days_to_critical`, `critical_date_ts`, `critical_reserves_kg` |
+| `forecast_reserves` | `hive_id`, `method=seasonal` | `reserves_kg` (same, from the seasonal method) |
+| `forecast` | `hive_id`, `kind=depletion`, `method=linear` | `reserves_kg`, `consumption_kg_day`, `r2`, `days_to_critical`, `critical_date_ts`, `critical_reserves_kg`, `status` |
+| `forecast` | `hive_id`, `kind=depletion`, `method=seasonal` | `reserves_kg`, `min_reserves_kg`, `min_ts`, `scale_k`, `days_to_critical`, `critical_date_ts`, `critical_reserves_kg`, `status` |
 | `forecast` | `hive_id`, `kind=harvest` | `optimal_ts`, `harvestable_kg`, `actual_harvest_ts`, `actual_harvest_kg`, `delta_days`, `status` |
-| `backtest` | `hive_id`, `method`, `horizon_days` | `mae_kg`, `bias_kg`, `n` |
+| `backtest` | `hive_id`, `method` (`naive`, `linear`, `seasonal`), `horizon_days` | `mae_kg`, `bias_kg`, `n` |
 
 **Depletion of the stores.** Reserves = weight - tare, smoothed with a 7-day moving
 average; a line is fitted on the last 30 days of smoothed reserves: consumption = -slope,
@@ -446,9 +448,24 @@ the peak of the nectar flow, the first day from which the exponentially smoothed
 reserves. If the flow is still on the day before the real harvest no optimal date exists
 (status "flow active at harvest").
 
+**Seasonal method** (Step 11b). The line extends the consumption of the last weeks, but
+the consumption changes with the seasons (it is low in autumn and speeds up in March-April).
+The seasonal method repeats the winter: it takes the path of the smoothed reserves of the
+previous year, from today's calendar day up to 240 days later, and applies it day by day
+to today's reserves. One correction only: the consumption (the falling days) is multiplied
+by `k` = consumption now / consumption a year ago on the same days (the same window of the
+line, kept in [0.5, 2]); the gains (nectar, feeding) are the ones of last year. Result: the
+date the projection falls under the critical threshold (or "no depletion expected"), the
+predicted minimum with its date, and `k`. Without a previous year the method is reported
+as not available. Caveat: `k` is measured on a few weeks of autumn, when the net consumption
+is small and depends on the weather, so it can be noisy (it hit the 0.5 limit for hive-01).
+On this synthetic data every year follows the same calendar, so the seasonal method has an
+advantage that real data would not give.
+
 **Backtest.** Weekly origins from 1 November to 1 February of the last complete winter;
 at each origin only the data up to that day is used to forecast the smoothed reserves at
-+30, +60 and +90 days, with a naive baseline (reserves stay as they are) and the line.
++30, +60 and +90 days, with three methods: naive baseline (reserves stay as they are), the
+line and the seasonal method (whose profile comes from the winter before the origin).
 Bias = predicted - actual (positive: optimistic).
 
 Run the unit tests (pure functions: moving average, smoothing, regression with R², days to
@@ -461,14 +478,16 @@ docker compose run --rm --no-deps analytics python -m pytest -q
 Read the **Apiary - Previsioni** dashboard (http://localhost:3000, link "Previsioni" on the
 Apiary dashboard and "Apiary (live)" back; default range from now-120d to now+180d):
 
-- *Riserve e previsione*: actual (thin) and smoothed (thick) reserves, the linear
-  projection (dashed, into the future) and the critical threshold (red dashed). Vertical
-  lines are the optimal and the real harvest.
-- *Esaurimento delle scorte*: days to the critical threshold, its date, consumption and R²
-  of the line, per hive ("Nessun esaurimento previsto" if the reserves are stable).
+- *Riserve e previsione*: actual (thin) and smoothed (thick) reserves, the two forecasts
+  into the future (dashed "previsione retta", dotted blue/purple "previsione stagionale") and
+  the critical threshold (red dashed). The range goes up to 240 days ahead, so the seasonal
+  minimum (spring) is visible. Vertical lines are the optimal and the real harvest.
+- *Esaurimento delle scorte*: first row, the line (days to the critical threshold, its date,
+  consumption, R²); second row, the seasonal method (date of depletion or "Nessuno", predicted
+  minimum, date of the minimum, factor `k` of the consumption).
 - *Smielatura*: estimated optimal date against the real one, difference in days and
   extractable honey; below, the weight of the last 12 months.
-- *Backtest*: MAE and bias per hive, method and horizon.
+- *Backtest*: MAE and bias per hive and horizon, with the three methods side by side.
 
 Check the stores written for a hive and that a second run does not duplicate anything:
 

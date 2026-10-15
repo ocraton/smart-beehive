@@ -20,7 +20,7 @@ from .store import Store, line
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - analytics - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-DATA_DAYS = 365
+DATA_DAYS = 730   # two years: the seasonal method needs the year before
 CONFIG_WAIT_SECONDS = 5
 # At startup the retained config may still be the old one: Node-RED republishes it when the
 # hives come online. The first run waits for it, at most CONFIG_RETRIES x CONFIG_RETRY_SECONDS.
@@ -62,21 +62,22 @@ def analyse_hive(hive_id, days, weights, stores, store, now, today, lines):
 
     # Analysis A: depletion of the stores
     dep = analysis.analyse_depletion(days, smoothed, critical, gain)
-    store.delete_projection(
-        hive_id, datetime.combine(today - timedelta(days=2), datetime.min.time(), tzinfo=timezone.utc),
-        now + timedelta(days=400),
-    )
+    for method in ("linear", "seasonal"):
+        store.delete_projection(
+            hive_id, method, datetime.combine(today - timedelta(days=2), datetime.min.time(), tzinfo=timezone.utc),
+            now + timedelta(days=400),
+        )
     if dep is None:
         logger.warning("%s: not enough data for the depletion analysis", hive_id)
     else:
         fields = {
             "reserves_kg": dep["reserves_kg"], "consumption_kg_day": dep["consumption_kg_day"],
-            "r2": dep["r2"], "critical_reserves_kg": float(critical),
+            "r2": dep["r2"], "critical_reserves_kg": float(critical), "status": dep["status"],
         }
         if dep["days_to_critical"] is not None:
             fields["days_to_critical"] = dep["days_to_critical"]
             fields["critical_date_ts"] = run_ts + int(round(dep["days_to_critical"] * 86400))
-        lines.append(line("forecast", {"hive_id": hive_id, "kind": "depletion"}, fields, run_ts))
+        lines.append(line("forecast", {"hive_id": hive_id, "kind": "depletion", "method": "linear"}, fields, run_ts))
         for day, value in analysis.projection(dep):
             lines.append(line("forecast_reserves", {"hive_id": hive_id, "method": "linear"},
                               {"reserves_kg": value}, day * 86400))
@@ -90,8 +91,37 @@ def analyse_hive(hive_id, days, weights, stores, store, now, today, lines):
         summary.append(f"reserves {dep['reserves_kg']:.1f} kg, consumption {dep['consumption_kg_day']:.3f} kg/day, "
                        f"R2 {dep['r2']:.2f} (fit on {dep['fit_days']} days): {when}")
 
+    # Seasonal method: the profile of the previous year, consumption scaled by k
+    sea = analysis.analyse_seasonal(days, smoothed, gain, critical)
+    if sea["status"] == "no_previous_year":
+        logger.warning("%s: seasonal method not available (the previous year is not covered)", hive_id)
+        lines.append(line("forecast", {"hive_id": hive_id, "kind": "depletion", "method": "seasonal"},
+                          {"status": sea["status"]}, run_ts))
+        summary.append("seasonal: not available (no previous year)")
+    else:
+        if sea["k_warning"]:
+            logger.warning("%s: the previous year did not consume in the window, k = 1", hive_id)
+        fields = {
+            "reserves_kg": sea["reserves_kg"], "critical_reserves_kg": float(critical), "status": sea["status"],
+            "min_reserves_kg": sea["min_reserves_kg"], "min_ts": sea["min_day"] * 86400, "scale_k": sea["scale_k"],
+        }
+        if sea["days_to_critical"] is not None:
+            fields["days_to_critical"] = sea["days_to_critical"]
+            fields["critical_date_ts"] = (sea["last_day"] + int(sea["days_to_critical"])) * 86400
+        lines.append(line("forecast", {"hive_id": hive_id, "kind": "depletion", "method": "seasonal"}, fields, run_ts))
+        for day, value in sea["projection"]:
+            lines.append(line("forecast_reserves", {"hive_id": hive_id, "method": "seasonal"},
+                              {"reserves_kg": value}, day * 86400))
+        if sea["days_to_critical"] is not None:
+            when = f"critical in {sea['days_to_critical']:.0f} days ({fmt_date(sea['last_day'] + int(sea['days_to_critical']))})"
+        else:
+            when = "no depletion expected"
+        summary.append(f"seasonal: k {sea['scale_k']:.2f}, {when}, minimum {sea['min_reserves_kg']:.1f} kg "
+                       f"on {fmt_date(sea['min_day'])}")
+
     # Analysis B: harvest timing of the past season
-    harvest = analysis.analyse_harvest(days, weights, tare, stores["winter_reserves_kg"])
+    season = days >= days[-1] - analysis.SEASON_DAYS     # the past season, not the year before
+    harvest = analysis.analyse_harvest(days[season], weights[season], tare, stores["winter_reserves_kg"])
     fields = {}
     for key, name, cast in (("optimal_day", "optimal_ts", int), ("harvestable_kg", "harvestable_kg", float),
                             ("actual_day", "actual_harvest_ts", int), ("actual_kg", "actual_harvest_kg", float),

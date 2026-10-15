@@ -19,6 +19,12 @@ PROJECTION_EXTRA_DAYS = 30       # the projection goes on this long after the cr
 PROJECTION_MAX_DAYS = 240
 PROJECTION_NO_DEPLETION_DAYS = 90
 
+# --- Seasonal method
+SEASONAL_HORIZON_DAYS = 240
+SEASONAL_K_MIN = 0.5             # the scale factor of the consumption is kept in [0.5, 2.0]
+SEASONAL_K_MAX = 2.0
+SEASONAL_MIN_PREV_CONSUMPTION = 0.005   # kg/day: under this the previous year did not consume
+
 # --- Analysis B: harvest timing
 GAIN_ALPHA = 0.3                 # exponential smoothing of the daily net gain
 HARVEST_DROP_KG = 3.0            # a daily drop bigger than this is a real harvest
@@ -29,9 +35,12 @@ FLOW_END_GAIN_KG_DAY = 0.05      # the flow is over when the smoothed gain stays
 FLOW_END_DAYS = 3                # ... for this many consecutive days
 
 # --- Backtest
+BACKTEST_METHODS = ("naive", "linear", "seasonal")
 BACKTEST_HORIZONS = (30, 60, 90)
 BACKTEST_MIN_POINTS = 14         # smoothed days needed at an origin to fit the line
 BACKTEST_WEEK = 7
+
+SEASON_DAYS = 365                # the harvest analysis looks at the last season only
 
 EPOCH = date(1970, 1, 1)
 
@@ -116,6 +125,116 @@ def projection(depletion):
         (depletion["last_day"] + k, depletion["reserves_kg"] + depletion["slope"] * k)
         for k in range(1, horizon + 1)
     ]
+
+
+# ------------------------------------------------------------------ Seasonal method
+
+def previous_year_day(day):
+    """The same calendar day of the previous year (as a day number).
+
+    The 29th of February has no counterpart: it is mapped to the 28th of February, so the
+    previous-year profile simply does not change that day (a documented simplification).
+    """
+    d = EPOCH + timedelta(days=int(day))
+    try:
+        previous = d.replace(year=d.year - 1)
+    except ValueError:
+        previous = date(d.year - 1, 2, 28)
+    return day_number(previous)
+
+
+def seasonal_profile(index_of, smoothed, last_day, horizon=SEASONAL_HORIZON_DAYS):
+    """Daily changes of the smoothed reserves of the previous year, from today's calendar day.
+
+    Element k-1 is how much the reserves changed, a year ago, between the day that
+    corresponds to today+k-1 and the one that corresponds to today+k. None if the previous
+    year does not cover all those days.
+    """
+    values = []
+    for k in range(horizon + 1):
+        i = index_of.get(previous_year_day(last_day + k))
+        if i is None or not np.isfinite(smoothed[i]):
+            return None
+        values.append(float(smoothed[i]))
+    return np.diff(values)
+
+
+def seasonal_scale(days, smoothed, gain, index_of):
+    """Scale factor k: consumption seen now / consumption seen a year ago on the same days.
+
+    "Now" is the window of the line (the last 30 days, starting after a feeding event);
+    "a year ago" is the same calendar days of the previous year. In both cases the
+    consumption is minus the slope of a least-squares line. k is kept in [0.5, 2.0].
+    Returns (k, warning) or None if the previous year does not cover the window; the warning
+    is True when the previous year did not consume in that window (then k = 1).
+    """
+    fit = _fit_recent(days, smoothed, gain)
+    if fit is None:
+        return None
+    slope, _, _, last_day, window = fit
+    previous_x, previous_y = [], []
+    for day in range(last_day - window + 1, last_day + 1):
+        previous = previous_year_day(day)
+        i = index_of.get(previous)
+        if i is not None and np.isfinite(smoothed[i]):
+            previous_x.append(previous)
+            previous_y.append(float(smoothed[i]))
+    if len(previous_x) < FIT_MIN_DAYS:
+        return None
+    previous_slope, _, _ = linear_regression(previous_x, previous_y)
+    previous_consumption = -previous_slope
+    if previous_consumption < SEASONAL_MIN_PREV_CONSUMPTION:
+        return 1.0, True
+    return float(min(SEASONAL_K_MAX, max(SEASONAL_K_MIN, -slope / previous_consumption))), False
+
+
+def analyse_seasonal(days, smoothed, gain, critical_kg, horizon=SEASONAL_HORIZON_DAYS):
+    """Previsione stagionale delle riserve (spiegata in modo semplice).
+
+    L'idea: l'inverno si ripete. Un anno fa, a partire da oggi sul calendario, le riserve
+    hanno fatto un certo percorso: scendevano d'inverno, risalivano con il nettare di
+    primavera. Si prende quel percorso (giorno per giorno, sulle riserve già lisciate)
+    e lo si applica alle riserve di oggi, con una correzione sola: se quest'anno l'arnia
+    consuma più o meno di un anno fa negli stessi giorni, i consumi vengono moltiplicati
+    per k = consumo di adesso / consumo dell'anno scorso (tenuto fra 0,5 e 2). Le entrate
+    (nettare, nutrizione) restano quelle dell'anno scorso, senza correzione.
+
+    Risultato: la data in cui le riserve scendono sotto la soglia critica (se succede), il
+    minimo previsto con la sua data, e k. Se l'anno precedente non copre i giorni che
+    servono il metodo non è disponibile (status "no_previous_year"), senza errori.
+
+    Returns a dict: status ("depleting" | "no_depletion" | "now" | "no_previous_year"),
+    reserves_kg (now), scale_k, k_warning, days_to_critical, min_reserves_kg, min_day,
+    last_day and projection [(day, reserves_kg), ...] over `horizon` days.
+    """
+    days = np.asarray(days)
+    smoothed = np.asarray(smoothed, dtype=float)
+    finite = np.nonzero(np.isfinite(smoothed))[0]
+    if len(finite) == 0:
+        return {"status": "no_previous_year"}
+    index_of = {int(d): i for i, d in enumerate(days)}
+    last_day = int(days[finite[-1]])
+    now = float(smoothed[finite[-1]])
+    profile = seasonal_profile(index_of, smoothed, last_day, horizon)
+    scale = seasonal_scale(days, smoothed, gain, index_of)
+    if profile is None or scale is None:
+        return {"status": "no_previous_year"}
+    k, warning = scale
+    steps = np.where(profile < 0, profile * k, profile)   # only the consumption is scaled
+    path = now + np.cumsum(steps)
+    below = np.nonzero(path < critical_kg)[0]
+    low = int(np.argmin(path))
+    result = {
+        "status": "depleting" if len(below) else "no_depletion", "reserves_kg": now, "scale_k": k,
+        "k_warning": warning, "days_to_critical": None, "min_reserves_kg": float(path[low]),
+        "min_day": last_day + low + 1, "last_day": last_day,
+        "projection": [(last_day + j + 1, float(v)) for j, v in enumerate(path)],
+    }
+    if now < critical_kg:
+        result.update(status="now", days_to_critical=0.0)
+    elif len(below):
+        result["days_to_critical"] = float(below[0] + 1)
+    return result
 
 
 # ----------------------------------------------------------------------- Analysis B
@@ -241,15 +360,18 @@ def backtest(days, smoothed, origins, gain=None):
     """Forecast the smoothed reserves at +30/+60/+90 days from every origin, then compare.
 
     At each origin only the data up to that day is used. Methods:
-      naive  the reserves stay what they are at the origin (baseline);
-      linear the line of analysis A, extended: fitted reserves + slope * horizon.
+      naive    the reserves stay what they are at the origin (baseline);
+      linear   the line of analysis A, extended: fitted reserves + slope * horizon;
+      seasonal the seasonal method: the profile of the year before the origin, with the
+               consumption scaled by k (not available without a previous year).
     Error = predicted - actual; returns {(method, horizon): {"mae", "bias", "n"}}
     (bias > 0 means the forecast is optimistic: more reserves than there really were).
     """
     days = np.asarray(days)
     smoothed = np.asarray(smoothed, dtype=float)
+    gain = None if gain is None else np.asarray(gain, dtype=float)
     index_of = {int(d): i for i, d in enumerate(days)}
-    errors = {(m, h): [] for m in ("naive", "linear") for h in BACKTEST_HORIZONS}
+    errors = {(m, h): [] for m in BACKTEST_METHODS for h in BACKTEST_HORIZONS}
     for origin in origins:
         day = day_number(origin)
         i = index_of.get(day)
@@ -258,15 +380,18 @@ def backtest(days, smoothed, origins, gain=None):
         history = smoothed[:i + 1]
         if int(np.isfinite(history).sum()) < BACKTEST_MIN_POINTS:
             continue
-        slope, estimate, _, _, _ = _fit_recent(
-            days[:i + 1], history, None if gain is None else np.asarray(gain)[:i + 1])
+        origin_gain = None if gain is None else gain[:i + 1]
+        slope, estimate, _, _, _ = _fit_recent(days[:i + 1], history, origin_gain)
         naive = float(history[np.isfinite(history)][-1])
+        seasonal = analyse_seasonal(days[:i + 1], history, origin_gain, critical_kg=0.0, horizon=max(BACKTEST_HORIZONS))
         for h in BACKTEST_HORIZONS:
             j = index_of.get(day + h)
             if j is None or not np.isfinite(smoothed[j]):
                 continue
             errors[("naive", h)].append(naive - smoothed[j])
             errors[("linear", h)].append(estimate + slope * h - smoothed[j])
+            if seasonal["status"] != "no_previous_year":
+                errors[("seasonal", h)].append(seasonal["projection"][h - 1][1] - smoothed[j])
     return {
         key: {"mae": float(np.mean(np.abs(e))), "bias": float(np.mean(e)), "n": len(e)}
         for key, e in errors.items() if e

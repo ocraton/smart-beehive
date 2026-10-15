@@ -85,7 +85,9 @@ Container Docker separati, orchestrati con un unico `docker-compose.yml`:
   logica → write su InfluxDB. Esegue un'analisi completa all'avvio e poi ogni
   `ANALYTICS_INTERVAL_SECONDS` (600 s); `depends_on` influxdb healthy, backfill
   completato, mosquitto. Il peso giornaliero dell'ultimo anno è aggregato dal
-  database (Flux `aggregateWindow(every: 1d, fn: mean)`); riserve = peso −
+  database (Flux `aggregateWindow(every: 1d, fn: mean)`) sugli ultimi due
+  anni (`DATA_DAYS = 730`, serve l'anno precedente al metodo stagionale; la
+  smielatura si analizza solo sull'ultima stagione); riserve = peso −
   `tare_kg`. La config per arnia (sezione `stores`) viene letta dai messaggi
   retained di `apiary/+/config`: ci si connette, si raccolgono per 5 s e ci si
   disconnette; al primo run si aspetta (max 60 s) che Node-RED l'abbia
@@ -113,12 +115,18 @@ Container Docker separati, orchestrati con un unico `docker-compose.yml`:
   proiezione precedente viene cancellata prima di riscriverla), `forecast`
   (tag `hive_id`, `kind=depletion|harvest`, un punto per run con tutti i campi
   del run) e `backtest` (tag `hive_id`, `method`, `horizon_days`; un punto al
-  giorno). Costanti con nome e documentate in `analytics/src/analysis.py`;
+  giorno). Dallo Step 11b `forecast` depletion ha il tag `method` (`linear` |
+  `seasonal`; seasonal aggiunge `min_reserves_kg`, `min_ts`, `scale_k`),
+  `forecast_reserves` ha una proiezione per metodo (cancellata per metodo prima
+  di riscriverla) e il backtest confronta tre metodi (`naive`, `linear`,
+  `seasonal`; il profilo stagionale di ogni origine viene dall'inverno prima).
+  Nota: sui dati sintetici il metodo stagionale è avvantaggiato perché gli anni
+  seguono lo stesso calendario; su dati reali il vantaggio sarebbe minore. Costanti con nome e documentate in `analytics/src/analysis.py`;
   test pytest delle funzioni pure in `analytics/tests/`.
 - **Grafana**: sola lettura da InfluxDB, dashboard con variabile
   `hive_id`, stato attuatori, alert come annotation.
 - **Tempo simulato**: un servizio one-shot `backfill` (Python, cartella
-  `backfill/`) scrive un anno di storico sintetico direttamente su InfluxDB
+  `backfill/`) scrive due anni di storico sintetico (`BACKFILL_DAYS=730`) direttamente su InfluxDB
   a ogni avvio dello stack, per rendere credibile il forecasting senza
   aspettare mesi reali durante la demo. `simulator` ha `depends_on: backfill`
   con `service_completed_successfully`: parte solo a storico scritto. Ordine:
@@ -127,9 +135,15 @@ Container Docker separati, orchestrati con un unico `docker-compose.yml`:
   sessione inizia e la sessione non si tocca, altrimenti finisce "adesso";
   poi delete di tutto il measurement `telemetry` precedente (restano
   `actuator` e `alert`) e write a batch di 5000 punti. Risoluzione oraria
-  (8760 punti per serie), stesso schema dei dati live, seed fisso
+  (17520 punti per serie su due anni), stesso schema dei dati live, seed fisso
   (`BACKFILL_SEED=42`) e chiavi dei numeri casuali legate alla data
-  assoluta, quindi stessa data → stessi valori a ogni esecuzione. Il peso
+  assoluta, quindi stessa data → stessi valori a ogni esecuzione. I due anni
+  hanno lo stesso calendario apistico (raccolto, smielatura, nutrizione,
+  consumo invernale) e meteo diverso (componente ciclica, catena di Markov
+  legata alla data). Le riserve restano sopra ~3 kg in tutti e due gli anni; il
+  profilo di hive-02 è stato ricalibrato (`consumption_scale` e `flow_scale`
+  0,55) perché con i valori precedenti il bilancio annuo di −10,7 kg avrebbe
+  portato il primo anno a 29,5 kg di riserve. Il peso
   è ancorato (traslazione costante) al peso da cui parte il live (primo
   peso della sessione in corso, altrimenti tara + riserve del profilo), così
   storico e live si raccordano senza formule replicate.
@@ -409,6 +423,21 @@ registra un Last Will `offline` (retained) e pubblica `online`
   baseline e che è ottimista (bias positivo), sempre di più a fine inverno.
   Dashboard: riserve reali, lisciate, proiezione tratteggiata e soglia critica;
   stat per arnia; tabella smielatura con annotation sul peso; tabella backtest.
+- **Step 11b — completato**: metodo di previsione stagionale per l'esaurimento
+  delle scorte, affiancato alla retta, con backtest a tre metodi. Backfill a due
+  anni (730 giorni, 17520 punti per serie, 3,7 s), stesso calendario e meteo
+  diverso; profilo di hive-02 ricalibrato (`consumption_scale` e `flow_scale`
+  0,55, tara e `reserves_kg` invariate) per evitare la deriva del bilancio
+  annuo. Analytics legge 730 giorni; nuove scritture `forecast_reserves`
+  `method=seasonal`, `forecast` con tag `method` e backtest `method=seasonal`.
+  Grafana: due previsioni (retta tratteggiata, stagionale a puntini) con range
+  fino a now+240d, riquadri per entrambi i metodi e tabella backtest con i tre
+  metodi affiancati. Risultati al 15/10/2026: hive-01 (riserve 19,5 kg) retta
+  critica fra 514 giorni, stagionale nessun esaurimento (k 0,50, minimo 12,0 kg il
+  03/05/2027; con k = 1 sarebbe 4,4 kg); hive-02 (8,0 kg) retta 08/03/2027,
+  stagionale 10/03/2027 (k 0,59, minimo 3,0 kg il 04/05/2027). Backtest: lo
+  stagionale ha MAE e bias molto più piccoli della retta, soprattutto sulle
+  origini di gennaio-febbraio (hive-01 a +90 giorni: bias +0,09 kg contro +3,15).
 - **Step successivo**: da concordare con lo sviluppatore — non
   procedere senza il suo via libera esplicito.
 
