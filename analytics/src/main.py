@@ -20,7 +20,7 @@ from .store import Store, line
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - analytics - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-DATA_DAYS = 730   # two years: the seasonal method needs the year before
+DATA_DAYS = 800   # two years + the autumn before: the seasonal method needs the year before the October origins
 CONFIG_WAIT_SECONDS = 5
 # At startup the retained config may still be the old one: Node-RED republishes it when the
 # hives come online. The first run waits for it, at most CONFIG_RETRIES x CONFIG_RETRY_SECONDS.
@@ -104,6 +104,7 @@ def analyse_hive(hive_id, days, weights, stores, store, now, today, lines):
         fields = {
             "reserves_kg": sea["reserves_kg"], "critical_reserves_kg": float(critical), "status": sea["status"],
             "min_reserves_kg": sea["min_reserves_kg"], "min_ts": sea["min_day"] * 86400, "scale_k": sea["scale_k"],
+            "estimated_k": sea["estimated_k"], "variant": sea["variant"],
         }
         if sea["days_to_critical"] is not None:
             fields["days_to_critical"] = sea["days_to_critical"]
@@ -116,7 +117,7 @@ def analyse_hive(hive_id, days, weights, stores, store, now, today, lines):
             when = f"critical in {sea['days_to_critical']:.0f} days ({fmt_date(sea['last_day'] + int(sea['days_to_critical']))})"
         else:
             when = "no depletion expected"
-        summary.append(f"seasonal: k {sea['scale_k']:.2f}, {when}, minimum {sea['min_reserves_kg']:.1f} kg "
+        summary.append(f"seasonal ({sea['variant']}): k {sea['scale_k']:.2f} (estimated {sea['estimated_k']:.2f}), {when}, minimum {sea['min_reserves_kg']:.1f} kg "
                        f"on {fmt_date(sea['min_day'])}")
 
     # Analysis B: harvest timing of the past season
@@ -140,14 +141,23 @@ def analyse_hive(hive_id, days, weights, stores, store, now, today, lines):
             "%.1f" % harvest["harvestable_kg"] if harvest["harvestable_kg"] is not None else "-",
             harvest["status"]))
 
-    # Backtest on the past winter
+    # Backtest on the past winter (October origins, November-February origins, all)
     results = analysis.backtest(days, smoothed, analysis.backtest_origins(today), gain)
     midnight = (today - analysis.EPOCH).days * 86400
-    for (method, horizon), r in sorted(results.items()):
-        lines.append(line("backtest", {"hive_id": hive_id, "method": method, "horizon_days": horizon},
-                          {"mae_kg": r["mae"], "bias_kg": r["bias"], "n": r["n"]}, midnight))
-    summary.append("backtest: " + ", ".join(
-        f"{m}+{h}d MAE {r['mae']:.2f} bias {r['bias']:+.2f} (n={r['n']})" for (m, h), r in sorted(results.items())))
+    store.delete_backtest(hive_id, datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc),
+                          datetime.combine(today + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc))
+    for period, rows in results.items():
+        for (method, horizon), r in sorted(rows.items()):
+            lines.append(line("backtest", {"hive_id": hive_id, "method": method, "horizon_days": horizon,
+                                           "period": period},
+                              {"mae_kg": r["mae"], "bias_kg": r["bias"], "n": r["n"]}, midnight))
+    chosen, scores = analysis.choose_variant([results["all"]])
+    summary.append("backtest (all origins): " + ", ".join(
+        f"{m}+{h}d MAE {r['mae']:.2f} bias {r['bias']:+.2f} (n={r['n']})"
+        for (m, h), r in sorted(results["all"].items())))
+    if chosen:
+        summary.append(f"backtest would choose seasonal variant '{chosen}' on this hive alone "
+                       f"(in use: '{analysis.SEASONAL_VARIANT}')")
     return summary
 
 

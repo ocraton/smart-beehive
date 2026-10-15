@@ -120,19 +120,19 @@ def test_model_does_not_see_the_harvest_drop():
 
 # ------------------------------------------------------------------- backtest
 
-def test_backtest_origins_cover_nov_1_to_feb_1_weekly():
+def test_backtest_origins_cover_oct_1_to_feb_1_weekly():
     origins = analysis.backtest_origins(date(2026, 10, 14))
-    assert origins[0] == date(2025, 11, 1) and origins[-1] <= date(2026, 2, 1)
+    assert origins[0] == date(2025, 10, 1) and origins[-1] <= date(2026, 2, 1)
     assert all((b - a).days == 7 for a, b in zip(origins, origins[1:]))
     # in February 2026 the winter 2025-26 is not fully known yet (+90 days): the one before is used
-    assert analysis.backtest_origins(date(2026, 2, 10))[0] == date(2024, 11, 1)
+    assert analysis.backtest_origins(date(2026, 2, 10))[0] == date(2024, 10, 1)
 
 
 def test_backtest_linear_is_exact_on_a_straight_line_and_naive_is_biased():
     days = days_from(400, start=date(2025, 10, 1))
     reserves = 30.0 - 0.05 * np.arange(400)  # a perfectly linear decline
     smoothed = moving_average(reserves, analysis.SMOOTHING_DAYS)
-    results = analysis.backtest(days, smoothed, analysis.backtest_origins(date(2026, 10, 14)))
+    results = analysis.backtest(days, smoothed, analysis.backtest_origins(date(2026, 10, 14)))["all"]
     for h in analysis.BACKTEST_HORIZONS:
         assert results[("linear", h)]["mae"] == pytest.approx(0.0, abs=1e-9)
         # naive keeps the origin value, so it is too optimistic by 0.05 * h kg
@@ -145,7 +145,7 @@ def test_backtest_linear_is_optimistic_when_consumption_accelerates():
     slow, fast = np.arange(400), np.maximum(np.arange(400) - 150, 0)
     reserves = 30.0 - 0.02 * slow - 0.1 * fast  # consumption speeds up after day 150
     smoothed = moving_average(reserves, analysis.SMOOTHING_DAYS)
-    results = analysis.backtest(days, smoothed, analysis.backtest_origins(date(2026, 10, 14)))
+    results = analysis.backtest(days, smoothed, analysis.backtest_origins(date(2026, 10, 14)))["all"]
     assert results[("linear", 90)]["bias"] > 0
 
 
@@ -220,23 +220,23 @@ def test_previous_year_day_handles_the_29th_of_february():
 
 def test_scale_k_is_the_ratio_of_the_consumptions():
     days, smoothed = two_years(flat_slopes(previous=-0.03, now=-0.045))
-    result = analysis.analyse_seasonal(days, smoothed, None, critical_kg=5.0)
+    result = analysis.analyse_seasonal(days, smoothed, None, critical_kg=5.0, variant="k")
     assert result["scale_k"] == pytest.approx(1.5)
     assert not result["k_warning"]
 
 
 def test_scale_k_is_clamped_between_half_and_two():
     days, high = two_years(flat_slopes(-0.03, -0.20))
-    assert analysis.analyse_seasonal(days, high, None, 5.0)["scale_k"] == 2.0
+    assert analysis.analyse_seasonal(days, high, None, 5.0, variant="k")["scale_k"] == 2.0
     days, low = two_years(flat_slopes(-0.03, -0.001))
-    assert analysis.analyse_seasonal(days, low, None, 5.0)["scale_k"] == 0.5
+    assert analysis.analyse_seasonal(days, low, None, 5.0, variant="k")["scale_k"] == 0.5
     days, growing = two_years(flat_slopes(-0.03, +0.05))  # reserves growing now: no consumption
-    assert analysis.analyse_seasonal(days, growing, None, 5.0)["scale_k"] == 0.5
+    assert analysis.analyse_seasonal(days, growing, None, 5.0, variant="k")["scale_k"] == 0.5
 
 
 def test_k_is_one_with_a_warning_when_the_previous_year_did_not_consume():
     days, smoothed = two_years(flat_slopes(previous=0.0, now=-0.05))
-    result = analysis.analyse_seasonal(days, smoothed, None, 5.0)
+    result = analysis.analyse_seasonal(days, smoothed, None, 5.0, variant="k")
     assert result["scale_k"] == 1.0 and result["k_warning"] is True
 
 
@@ -255,7 +255,7 @@ def test_only_the_consumption_is_scaled_and_the_gains_are_kept():
             return -0.04
         return -0.03
     days, smoothed = two_years(by_age)
-    result = analysis.analyse_seasonal(days, smoothed, None, critical_kg=-100.0)
+    result = analysis.analyse_seasonal(days, smoothed, None, critical_kg=-100.0, variant="k")
     k = result["scale_k"]
     assert k == pytest.approx(2.0)
     path = [v for _, v in result["projection"]]
@@ -277,7 +277,7 @@ def test_minimum_and_depletion_date_of_the_seasonal_projection():
             return +0.2
         return -0.1
     days, smoothed = two_years(by_age)
-    result = analysis.analyse_seasonal(days, smoothed, None, critical_kg=11.95)
+    result = analysis.analyse_seasonal(days, smoothed, None, critical_kg=11.95, variant="k")
     assert result["scale_k"] == pytest.approx(1.0)
     assert result["status"] == "depleting"
     assert result["reserves_kg"] == pytest.approx(20.0)
@@ -288,21 +288,92 @@ def test_minimum_and_depletion_date_of_the_seasonal_projection():
 
 def test_no_depletion_when_the_projection_stays_above_the_threshold():
     days, smoothed = two_years(flat_slopes(previous=-0.01, now=-0.01))
-    result = analysis.analyse_seasonal(days, smoothed, None, critical_kg=5.0)
+    result = analysis.analyse_seasonal(days, smoothed, None, critical_kg=5.0, variant="k")
     assert result["status"] == "no_depletion" and result["days_to_critical"] is None
     assert result["min_reserves_kg"] > 5.0
 
 
 def test_seasonal_is_not_available_without_the_previous_year():
     days, smoothed = two_years(flat_slopes(-0.03, -0.03), years=1)           # one year of data only
-    assert analysis.analyse_seasonal(days, smoothed, None, 5.0) == {"status": "no_previous_year"}
-    assert analysis.analyse_seasonal([], [], None, 5.0) == {"status": "no_previous_year"}
+    assert analysis.analyse_seasonal(days, smoothed, None, 5.0, variant="k") == {"status": "no_previous_year"}
+    assert analysis.analyse_seasonal([], [], None, 5.0, variant="k") == {"status": "no_previous_year"}
 
 
 def test_backtest_seasonal_is_exact_on_a_perfectly_seasonal_series():
     days = np.arange(analysis.day_number(date(2024, 10, 1)), analysis.day_number(END) + 1)
     smoothed = 20.0 + 8.0 * np.sin(2 * np.pi * days / 365.0)
-    results = analysis.backtest(days, smoothed, analysis.backtest_origins(END))
+    results = analysis.backtest(days, smoothed, analysis.backtest_origins(END))["all"]
     for h in analysis.BACKTEST_HORIZONS:
-        assert results[("seasonal", h)]["mae"] == pytest.approx(0.0, abs=1e-9)
+        assert results[("seasonal_k", h)]["mae"] == pytest.approx(0.0, abs=1e-9)
         assert results[("naive", h)]["mae"] > 0.5
+    for variant in ("seasonal_k1", "seasonal_shrunk"):
+        assert results[(variant, 30)]["mae"] == pytest.approx(0.0, abs=1e-6)
+
+
+# ------------------------------------------------ variants of k and choice of the variant
+
+def test_variant_k_applies_the_estimate_one_or_the_shrunk_value():
+    assert analysis.variant_k(0.5, "k") == 0.5
+    assert analysis.variant_k(0.5, "k1") == 1.0
+    assert analysis.variant_k(0.5, "shrunk") == pytest.approx(0.75)    # 1 + 0.5 * (0.5 - 1)
+    assert analysis.variant_k(2.0, "shrunk") == pytest.approx(1.5)
+    assert analysis.variant_k(1.0, "shrunk") == 1.0
+    with pytest.raises(ValueError):
+        analysis.variant_k(1.0, "other")
+
+
+def test_analyse_seasonal_reports_the_k_used_and_the_estimated_one():
+    days, smoothed = two_years(flat_slopes(previous=-0.03, now=-0.045))     # estimated k = 1.5
+    used = {v: analysis.analyse_seasonal(days, smoothed, None, 5.0, variant=v) for v in analysis.SEASONAL_VARIANTS}
+    assert used["k"]["scale_k"] == pytest.approx(1.5)
+    assert used["k1"]["scale_k"] == 1.0
+    assert used["shrunk"]["scale_k"] == pytest.approx(1.25)
+    assert all(r["estimated_k"] == pytest.approx(1.5) for r in used.values())
+    assert used["k1"]["variant"] == "k1"
+    # a larger k consumes more, so the minimum is lower
+    assert used["k"]["min_reserves_kg"] < used["shrunk"]["min_reserves_kg"] < used["k1"]["min_reserves_kg"]
+
+
+def scores(**by_variant):
+    """Backtest results of one hive: variant -> (mae, bias), the same at +60 and +90 days."""
+    return {("seasonal_" + v, h): {"mae": mae, "bias": bias, "n": 10}
+            for v, (mae, bias) in by_variant.items() for h in analysis.SELECTION_HORIZONS}
+
+
+def test_choose_variant_takes_the_lowest_mae():
+    best, table = analysis.choose_variant([scores(k=(0.7, -0.5), k1=(0.05, 0.03), shrunk=(0.4, -0.3))])
+    assert best == "k1"
+    assert table["k"]["mae"] == pytest.approx(0.7)
+
+
+def test_choose_variant_ties_within_0_1_kg_go_to_the_more_prudent_bias():
+    # MAE 0.30 vs 0.35: closer than 0.1 kg, so the lower bias (-0.3, underestimates) wins
+    best, _ = analysis.choose_variant([scores(k=(0.35, -0.3), k1=(0.30, 0.2), shrunk=(0.9, 0.0))])
+    assert best == "k"
+    # 0.30 vs 0.45: the difference is not a tie, the lowest MAE wins
+    best, _ = analysis.choose_variant([scores(k=(0.45, -0.3), k1=(0.30, 0.2))])
+    assert best == "k1"
+
+
+def test_choose_variant_averages_horizons_and_hives_and_ignores_other_horizons():
+    a = scores(k=(0.2, 0.0), k1=(0.5, 0.0))
+    b = scores(k=(0.6, 0.0), k1=(0.1, 0.0))
+    a[("seasonal_k", 30)] = {"mae": 99.0, "bias": 0.0, "n": 10}                # +30 days is not used
+    best, table = analysis.choose_variant([a, b])
+    assert table["k"]["mae"] == pytest.approx(0.4) and table["k1"]["mae"] == pytest.approx(0.3)
+    assert best == "k1"
+
+
+def test_choose_variant_without_data():
+    assert analysis.choose_variant([{}]) == (None, {})
+
+
+def test_backtest_periods_split_october_from_november_february():
+    assert analysis.in_period(date(2025, 10, 29), "october") and not analysis.in_period(date(2025, 11, 5), "october")
+    assert analysis.in_period(date(2025, 11, 5), "nov_feb") and analysis.in_period(date(2026, 2, 1), "nov_feb")
+    assert analysis.in_period(date(2025, 12, 1), "all")
+    days = days_from(500, start=date(2025, 4, 1))
+    smoothed = moving_average(30.0 - 0.05 * np.arange(500), analysis.SMOOTHING_DAYS)
+    results = analysis.backtest(days, smoothed, analysis.backtest_origins(date(2026, 10, 14)))
+    n = {p: results[p][("naive", 30)]["n"] for p in analysis.BACKTEST_PERIODS}
+    assert n["october"] + n["nov_feb"] == n["all"] == 18 and n["october"] == 5

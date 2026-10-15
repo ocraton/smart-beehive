@@ -80,6 +80,11 @@ class Store:
         predicate = f'_measurement="forecast_reserves" AND hive_id="{hive_id}" AND method="{method}"'
         self.client.delete_api().delete(start, stop, predicate, bucket=self.bucket, org=self.org)
 
+    def delete_backtest(self, hive_id, start, stop):
+        """Remove the backtest points of a hive in [start, stop): they are rewritten every run."""
+        predicate = f'_measurement="backtest" AND hive_id="{hive_id}"'
+        self.client.delete_api().delete(start, stop, predicate, bucket=self.bucket, org=self.org)
+
     def write(self, lines):
         write_api = self.client.write_api(write_options=SYNCHRONOUS)
         for i in range(0, len(lines), BATCH_SIZE):

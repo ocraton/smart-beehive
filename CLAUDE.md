@@ -86,7 +86,7 @@ Container Docker separati, orchestrati con un unico `docker-compose.yml`:
   `ANALYTICS_INTERVAL_SECONDS` (600 s); `depends_on` influxdb healthy, backfill
   completato, mosquitto. Il peso giornaliero dell'ultimo anno è aggregato dal
   database (Flux `aggregateWindow(every: 1d, fn: mean)`) sugli ultimi due
-  anni (`DATA_DAYS = 730`, serve l'anno precedente al metodo stagionale; la
+  anni (`DATA_DAYS = 800`, serve l'anno precedente al metodo stagionale e alle origini di ottobre del backtest; la
   smielatura si analizza solo sull'ultima stagione); riserve = peso −
   `tare_kg`. La config per arnia (sezione `stores`) viene letta dai messaggi
   retained di `apiary/+/config`: ci si connette, si raccolgono per 5 s e ci si
@@ -106,27 +106,40 @@ Container Docker separati, orchestrati con un unico `docker-compose.yml`:
   primo giorno dopo il picco del flusso (guadagno lisciato > +0,15 per ≥ 7
   giorni) in cui il guadagno lisciato resta < +0,05 per 3 giorni, usando solo
   i giorni PRIMA della smielatura reale; miele estraibile = peso − tara −
-  `winter_reserves_kg` (min 0). *Backtest*: origini settimanali da novembre
-  a inizio febbraio dell'ultimo inverno completo, previsioni a +30/+60/+90
-  giorni con baseline naive e retta lineare, solo dati fino all'origine, MAE
-  e bias (previsto − reale). Scrive su InfluxDB: `reserves` (tag `hive_id`,
+  `winter_reserves_kg` (min 0). *Backtest*: origini settimanali dal 1 ottobre a inizio febbraio (18)
+dell'ultimo inverno completo, previsioni a +30/+60/+90 giorni con baseline naive, retta lineare e tre
+varianti dello stagionale, solo dati fino all'origine, MAE e bias (previsto − reale), riportati su
+tutte le origini, su quelle di ottobre e su quelle di novembre-febbraio (tag `period`). Varianti del
+metodo stagionale (cambia solo il k applicato ai consumi): `k` (stimato, in [0.5, 2]), `k1` (k = 1,
+"come l'anno scorso") e `shrunk` (k = 1 + 0.5·(k stimato − 1)). *Scelta della variante*
+(`choose_variant`, costante `SEASONAL_VARIANT`, non rifatta a ogni run): quella con il MAE medio più
+basso a +60 e +90 giorni su tutte le origini e su entrambe le arnie; se due varianti differiscono di
+meno di 0,1 kg vince il bias più negativo, perché per le scorte sovrastimare è più pericoloso che
+sottostimare (una previsione ottimista ritarda la nutrizione di una colonia che sta finendo il cibo).
+Motivo: in autunno il consumo netto è piccolo e dipende dal meteo (nettare d'edera), quindi
+k stimato è il rapporto di due numeri piccoli e rumorosi. Numeri (15/10/2026, MAE/bias medi a +60 e
++90 giorni, tutte le origini): `k` 0,72/−0,56 kg; `shrunk` 0,39/−0,26 kg; `k1` 0,05/+0,03 kg →
+scelta `k1`. Sulle sole origini di ottobre `k` è pessimista (bias −2,2 e −3,3 kg a +60/+90 per
+hive-01) e `k1` ha MAE 0,14 e 0,12 kg. Attenzione: sui dati sintetici ogni anno ha lo stesso
+consumo, quindi k = 1 è il caso ideale e vince di molto; su dati reali il vantaggio sarebbe minore e
+la scelta andrebbe rifatta con `choose_variant`. Scrive su InfluxDB: `reserves` (tag `hive_id`,
   field `actual`/`smoothed`, mezzanotte UTC, idempotente), `forecast_reserves`
   (tag `hive_id`, `method=linear`, field `reserves_kg`, timestamp futuri; la
   proiezione precedente viene cancellata prima di riscriverla), `forecast`
   (tag `hive_id`, `kind=depletion|harvest`, un punto per run con tutti i campi
   del run) e `backtest` (tag `hive_id`, `method`, `horizon_days`; un punto al
   giorno). Dallo Step 11b `forecast` depletion ha il tag `method` (`linear` |
-  `seasonal`; seasonal aggiunge `min_reserves_kg`, `min_ts`, `scale_k`),
+  `seasonal`; seasonal aggiunge `min_reserves_kg`, `min_ts`, `scale_k` usato, `estimated_k`, `variant`),
   `forecast_reserves` ha una proiezione per metodo (cancellata per metodo prima
-  di riscriverla) e il backtest confronta tre metodi (`naive`, `linear`,
-  `seasonal`; il profilo stagionale di ogni origine viene dall'inverno prima).
+  di riscriverla) e il backtest (tag `method`: `naive`, `linear`, `seasonal_k`,
+  `seasonal_k1`, `seasonal_shrunk`; tag `period`: `all`, `october`, `nov_feb`; il profilo stagionale di ogni origine viene dall'anno prima).
   Nota: sui dati sintetici il metodo stagionale è avvantaggiato perché gli anni
   seguono lo stesso calendario; su dati reali il vantaggio sarebbe minore. Costanti con nome e documentate in `analytics/src/analysis.py`;
   test pytest delle funzioni pure in `analytics/tests/`.
 - **Grafana**: sola lettura da InfluxDB, dashboard con variabile
   `hive_id`, stato attuatori, alert come annotation.
 - **Tempo simulato**: un servizio one-shot `backfill` (Python, cartella
-  `backfill/`) scrive due anni di storico sintetico (`BACKFILL_DAYS=730`) direttamente su InfluxDB
+  `backfill/`) scrive due anni di storico sintetico (`BACKFILL_DAYS=800`) direttamente su InfluxDB
   a ogni avvio dello stack, per rendere credibile il forecasting senza
   aspettare mesi reali durante la demo. `simulator` ha `depends_on: backfill`
   con `service_completed_successfully`: parte solo a storico scritto. Ordine:
@@ -135,7 +148,7 @@ Container Docker separati, orchestrati con un unico `docker-compose.yml`:
   sessione inizia e la sessione non si tocca, altrimenti finisce "adesso";
   poi delete di tutto il measurement `telemetry` precedente (restano
   `actuator` e `alert`) e write a batch di 5000 punti. Risoluzione oraria
-  (17520 punti per serie su due anni), stesso schema dei dati live, seed fisso
+  (19200 punti per serie su 800 giorni), stesso schema dei dati live, seed fisso
   (`BACKFILL_SEED=42`) e chiavi dei numeri casuali legate alla data
   assoluta, quindi stessa data → stessi valori a ogni esecuzione. I due anni
   hanno lo stesso calendario apistico (raccolto, smielatura, nutrizione,
@@ -424,20 +437,23 @@ registra un Last Will `offline` (retained) e pubblica `online`
   Dashboard: riserve reali, lisciate, proiezione tratteggiata e soglia critica;
   stat per arnia; tabella smielatura con annotation sul peso; tabella backtest.
 - **Step 11b — completato**: metodo di previsione stagionale per l'esaurimento
-  delle scorte, affiancato alla retta, con backtest a tre metodi. Backfill a due
-  anni (730 giorni, 17520 punti per serie, 3,7 s), stesso calendario e meteo
+  delle scorte, affiancato alla retta, con backtest. Backfill di 800 giorni
+  (due anni più l'autunno prima, 19200 punti per serie), stesso calendario e meteo
   diverso; profilo di hive-02 ricalibrato (`consumption_scale` e `flow_scale`
-  0,55, tara e `reserves_kg` invariate) per evitare la deriva del bilancio
-  annuo. Analytics legge 730 giorni; nuove scritture `forecast_reserves`
-  `method=seasonal`, `forecast` con tag `method` e backtest `method=seasonal`.
-  Grafana: due previsioni (retta tratteggiata, stagionale a puntini) con range
-  fino a now+240d, riquadri per entrambi i metodi e tabella backtest con i tre
-  metodi affiancati. Risultati al 15/10/2026: hive-01 (riserve 19,5 kg) retta
-  critica fra 514 giorni, stagionale nessun esaurimento (k 0,50, minimo 12,0 kg il
-  03/05/2027; con k = 1 sarebbe 4,4 kg); hive-02 (8,0 kg) retta 08/03/2027,
-  stagionale 10/03/2027 (k 0,59, minimo 3,0 kg il 04/05/2027). Backtest: lo
-  stagionale ha MAE e bias molto più piccoli della retta, soprattutto sulle
-  origini di gennaio-febbraio (hive-01 a +90 giorni: bias +0,09 kg contro +3,15).
+  0,55, tara e `reserves_kg` invariate) per evitare la deriva del bilancio annuo.
+  Analytics legge 800 giorni. Scelta del k basata sul backtest: origini settimanali
+  dal 1 ottobre a inizio febbraio (18; periodi `all`, `october`, `nov_feb`), cinque metodi
+  (`naive`, `linear`, `seasonal_k`, `seasonal_k1`, `seasonal_shrunk`); criterio MAE medio più
+  basso a +60/+90 giorni su tutte le origini (parità entro 0,1 kg: bias più prudente),
+  fissato in `SEASONAL_VARIANT = "k1"` con i numeri nel commento (k 0,72/−0,56 kg, shrunk
+  0,39/−0,26, k1 0,05/+0,03). Scritture: `forecast_reserves` e `forecast` con `method=seasonal`
+  e campi `variant`, `scale_k` (usato), `estimated_k`. Grafana: due previsioni (retta
+  tratteggiata, stagionale a puntini), range fino a now+240d, riquadri per i due metodi (con il k
+  usato) e due tabelle di backtest (MAE e bias). Risultati al 15/10/2026: hive-01 (riserve 19,5 kg)
+  retta critica fra 514 giorni, stagionale (k = 1) critica il 29/04/2027, minimo 4,4 kg il 03/05/2027;
+  hive-02 (8,0 kg) retta 08/03/2027, stagionale 21/01/2027, minimo −0,5 kg il 04/05/2027.
+  Sui dati sintetici k = 1 è il caso ideale (stesso consumo ogni anno): il vantaggio sarebbe minore
+  su dati reali.
 - **Step successivo**: da concordare con lo sviluppatore — non
   procedere senza il suo via libera esplicito.
 

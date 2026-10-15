@@ -24,6 +24,23 @@ SEASONAL_HORIZON_DAYS = 240
 SEASONAL_K_MIN = 0.5             # the scale factor of the consumption is kept in [0.5, 2.0]
 SEASONAL_K_MAX = 2.0
 SEASONAL_MIN_PREV_CONSUMPTION = 0.005   # kg/day: under this the previous year did not consume
+SHRINK_WEIGHT = 0.5              # shrunk variant: k = 1 + 0.5 * (estimated k - 1)
+# Variants of the seasonal method: they only differ in the k applied to the consumption.
+#   k       the estimated k (ratio of two small, noisy autumn consumptions), kept in [0.5, 2]
+#   k1      k = 1: "like last year"
+#   shrunk  the estimate pulled half-way towards 1
+SEASONAL_VARIANTS = ("k", "k1", "shrunk")
+SELECTION_HORIZONS = (60, 90)    # the variant is chosen on the MAE at these horizons ...
+SELECTION_TIE_KG = 0.1           # ... and if two differ by less than this, the more prudent wins
+# Variant used by the service, chosen once with `choose_variant` on the backtest of all the
+# origins (1 Oct - 1 Feb of the last complete winter, 18 weekly origins, both hives, mean of
+# the MAE and bias at +60 and +90 days). Result on the data of 15/10/2026:
+#   k       MAE 0.72 kg, bias -0.56 kg   (too pessimistic in October: -2.2 / -3.3 kg at +60/+90 d)
+#   shrunk  MAE 0.39 kg, bias -0.26 kg
+#   k1      MAE 0.05 kg, bias +0.03 kg   <- lowest MAE by far (no tie within 0.1 kg)
+# On synthetic data, where every year has the same consumption, k = 1 is the ideal case:
+# see the note in CLAUDE.md before reading the numbers as a property of real hives.
+SEASONAL_VARIANT = "k1"
 
 # --- Analysis B: harvest timing
 GAIN_ALPHA = 0.3                 # exponential smoothing of the daily net gain
@@ -35,10 +52,11 @@ FLOW_END_GAIN_KG_DAY = 0.05      # the flow is over when the smoothed gain stays
 FLOW_END_DAYS = 3                # ... for this many consecutive days
 
 # --- Backtest
-BACKTEST_METHODS = ("naive", "linear", "seasonal")
+BACKTEST_METHODS = ("naive", "linear") + tuple("seasonal_" + v for v in SEASONAL_VARIANTS)
 BACKTEST_HORIZONS = (30, 60, 90)
 BACKTEST_MIN_POINTS = 14         # smoothed days needed at an origin to fit the line
 BACKTEST_WEEK = 7
+BACKTEST_PERIODS = ("all", "october", "nov_feb")   # origins of October / of November-February
 
 SEASON_DAYS = 365                # the harvest analysis looks at the last season only
 
@@ -188,7 +206,18 @@ def seasonal_scale(days, smoothed, gain, index_of):
     return float(min(SEASONAL_K_MAX, max(SEASONAL_K_MIN, -slope / previous_consumption))), False
 
 
-def analyse_seasonal(days, smoothed, gain, critical_kg, horizon=SEASONAL_HORIZON_DAYS):
+def variant_k(estimated, variant):
+    """The k applied to the consumption by a variant of the seasonal method."""
+    if variant == "k":
+        return estimated
+    if variant == "k1":
+        return 1.0
+    if variant == "shrunk":
+        return 1.0 + SHRINK_WEIGHT * (estimated - 1.0)
+    raise ValueError(f"unknown seasonal variant: {variant}")
+
+
+def analyse_seasonal(days, smoothed, gain, critical_kg, horizon=SEASONAL_HORIZON_DAYS, variant=None):
     """Previsione stagionale delle riserve (spiegata in modo semplice).
 
     L'idea: l'inverno si ripete. Un anno fa, a partire da oggi sul calendario, le riserve
@@ -203,8 +232,11 @@ def analyse_seasonal(days, smoothed, gain, critical_kg, horizon=SEASONAL_HORIZON
     minimo previsto con la sua data, e k. Se l'anno precedente non copre i giorni che
     servono il metodo non è disponibile (status "no_previous_year"), senza errori.
 
+    `variant` (default SEASONAL_VARIANT) decides which k is applied: the estimated one, 1, or
+    the estimate pulled half-way towards 1 (see SEASONAL_VARIANTS).
+
     Returns a dict: status ("depleting" | "no_depletion" | "now" | "no_previous_year"),
-    reserves_kg (now), scale_k, k_warning, days_to_critical, min_reserves_kg, min_day,
+    reserves_kg (now), scale_k (the one used), estimated_k, variant, k_warning, days_to_critical, min_reserves_kg, min_day,
     last_day and projection [(day, reserves_kg), ...] over `horizon` days.
     """
     days = np.asarray(days)
@@ -219,14 +251,16 @@ def analyse_seasonal(days, smoothed, gain, critical_kg, horizon=SEASONAL_HORIZON
     scale = seasonal_scale(days, smoothed, gain, index_of)
     if profile is None or scale is None:
         return {"status": "no_previous_year"}
-    k, warning = scale
+    variant = variant or SEASONAL_VARIANT
+    estimated, warning = scale
+    k = variant_k(estimated, variant)
     steps = np.where(profile < 0, profile * k, profile)   # only the consumption is scaled
     path = now + np.cumsum(steps)
     below = np.nonzero(path < critical_kg)[0]
     low = int(np.argmin(path))
     result = {
         "status": "depleting" if len(below) else "no_depletion", "reserves_kg": now, "scale_k": k,
-        "k_warning": warning, "days_to_critical": None, "min_reserves_kg": float(path[low]),
+        "estimated_k": estimated, "variant": variant, "k_warning": warning, "days_to_critical": None, "min_reserves_kg": float(path[low]),
         "min_day": last_day + low + 1, "last_day": last_day,
         "projection": [(last_day + j + 1, float(v)) for j, v in enumerate(path)],
     }
@@ -341,14 +375,14 @@ def analyse_harvest(days, weights, tare_kg, winter_reserves_kg):
 # ------------------------------------------------------------------------ Backtest
 
 def backtest_origins(today):
-    """Weekly origins from Nov 1 to Feb 1 of the most recent winter fully in the past.
+    """Weekly origins from Oct 1 to Feb 1 of the most recent winter fully in the past.
 
     "Fully" means that the longest horizon from the last origin is already known.
     """
     for year in (today.year, today.year - 1, today.year - 2):
         if date(year + 1, 2, 1) + timedelta(days=max(BACKTEST_HORIZONS)) <= today:
             origins = []
-            d = date(year, 11, 1)
+            d = date(year, 10, 1)
             while d <= date(year + 1, 2, 1):
                 origins.append(d)
                 d += timedelta(days=BACKTEST_WEEK)
@@ -356,22 +390,30 @@ def backtest_origins(today):
     return []
 
 
+def in_period(origin, period):
+    """Whether a backtest origin belongs to the period: "all", "october" or "nov_feb"."""
+    if period == "all":
+        return True
+    return (origin.month == 10) == (period == "october")
+
+
 def backtest(days, smoothed, origins, gain=None):
     """Forecast the smoothed reserves at +30/+60/+90 days from every origin, then compare.
 
     At each origin only the data up to that day is used. Methods:
-      naive    the reserves stay what they are at the origin (baseline);
-      linear   the line of analysis A, extended: fitted reserves + slope * horizon;
-      seasonal the seasonal method: the profile of the year before the origin, with the
-               consumption scaled by k (not available without a previous year).
-    Error = predicted - actual; returns {(method, horizon): {"mae", "bias", "n"}}
-    (bias > 0 means the forecast is optimistic: more reserves than there really were).
+      naive             the reserves stay what they are at the origin (baseline);
+      linear            the line of analysis A, extended: fitted reserves + slope * horizon;
+      seasonal_<variant> the seasonal method (profile of the year before the origin) with
+                        the k of each variant (not available without a previous year).
+    Error = predicted - actual (bias > 0: the forecast is optimistic, more reserves than
+    there really were). Returns {period: {(method, horizon): {"mae", "bias", "n"}}} for the
+    periods "all" origins, "october" origins and "nov_feb" origins.
     """
     days = np.asarray(days)
     smoothed = np.asarray(smoothed, dtype=float)
     gain = None if gain is None else np.asarray(gain, dtype=float)
     index_of = {int(d): i for i, d in enumerate(days)}
-    errors = {(m, h): [] for m in BACKTEST_METHODS for h in BACKTEST_HORIZONS}
+    errors = []    # (origin, method, horizon, error)
     for origin in origins:
         day = day_number(origin)
         i = index_of.get(day)
@@ -383,16 +425,52 @@ def backtest(days, smoothed, origins, gain=None):
         origin_gain = None if gain is None else gain[:i + 1]
         slope, estimate, _, _, _ = _fit_recent(days[:i + 1], history, origin_gain)
         naive = float(history[np.isfinite(history)][-1])
-        seasonal = analyse_seasonal(days[:i + 1], history, origin_gain, critical_kg=0.0, horizon=max(BACKTEST_HORIZONS))
+        seasonal = {
+            v: analyse_seasonal(days[:i + 1], history, origin_gain, critical_kg=0.0,
+                                horizon=max(BACKTEST_HORIZONS), variant=v)
+            for v in SEASONAL_VARIANTS
+        }
         for h in BACKTEST_HORIZONS:
             j = index_of.get(day + h)
             if j is None or not np.isfinite(smoothed[j]):
                 continue
-            errors[("naive", h)].append(naive - smoothed[j])
-            errors[("linear", h)].append(estimate + slope * h - smoothed[j])
-            if seasonal["status"] != "no_previous_year":
-                errors[("seasonal", h)].append(seasonal["projection"][h - 1][1] - smoothed[j])
-    return {
-        key: {"mae": float(np.mean(np.abs(e))), "bias": float(np.mean(e)), "n": len(e)}
-        for key, e in errors.items() if e
-    }
+            errors.append((origin, "naive", h, naive - smoothed[j]))
+            errors.append((origin, "linear", h, estimate + slope * h - smoothed[j]))
+            for v, result in seasonal.items():
+                if result["status"] != "no_previous_year":
+                    errors.append((origin, "seasonal_" + v, h, result["projection"][h - 1][1] - smoothed[j]))
+    out = {}
+    for period in BACKTEST_PERIODS:
+        grouped = {}
+        for origin, method, h, e in errors:
+            if in_period(origin, period):
+                grouped.setdefault((method, h), []).append(e)
+        out[period] = {
+            key: {"mae": float(np.mean(np.abs(e))), "bias": float(np.mean(e)), "n": len(e)}
+            for key, e in grouped.items()
+        }
+    return out
+
+
+def choose_variant(results_by_hive):
+    """The seasonal variant with the lowest MAE at +60 and +90 days over all the origins.
+
+    `results_by_hive` is a list of the "all" results of `backtest`, one per hive. The score
+    of a variant is the mean of its MAE (and of its bias) at SELECTION_HORIZONS over the hives.
+    Variants whose MAE is within SELECTION_TIE_KG of the best one are tied, and the tie goes
+    to the lowest bias: for the stores, overestimating is more dangerous than underestimating
+    (an optimistic forecast delays the feeding of a colony that is running out of food).
+    Returns (variant, scores {variant: {"mae", "bias"}}); (None, {}) without data.
+    """
+    scores = {}
+    for v in SEASONAL_VARIANTS:
+        cells = [r[("seasonal_" + v, h)] for r in results_by_hive for h in SELECTION_HORIZONS
+                 if ("seasonal_" + v, h) in r]
+        if cells:
+            scores[v] = {"mae": float(np.mean([c["mae"] for c in cells])),
+                         "bias": float(np.mean([c["bias"] for c in cells]))}
+    if not scores:
+        return None, {}
+    best = min(s["mae"] for s in scores.values())
+    tied = [v for v, s in scores.items() if s["mae"] - best < SELECTION_TIE_KG]
+    return min(tied, key=lambda v: (scores[v]["bias"], scores[v]["mae"])), scores
