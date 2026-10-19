@@ -310,7 +310,7 @@ registra un Last Will `offline` (retained) e pubblica `online`
   `nodered/data/flows.json`): `mqtt in` su `apiary/+/sensors/#` → function che
   costruisce il punto (`telemetry`, tag `hive_id`/`sensor`, field `value`,
   timestamp da `ts`) → `influxdb batch` (config node v2.0, org/bucket
-  `beehive`). Token solo in `flows_cred.json` (non versionato). Verificato con
+  `beehive`). Token solo in `flows_cred.json` (non versionato, dallo Step 12 generato da `.env` a ogni avvio). Verificato con
   query Flux: 12 serie (2 arnie x 6 sensori), nessun punto nel 1970.
 - **Step 5 — completato**: container Grafana OSS 13.0.2 in `docker-compose.yml`
   (porta 3000, volume `grafana_data`, avviato a InfluxDB healthy). Data source
@@ -454,6 +454,29 @@ registra un Last Will `offline` (retained) e pubblica `online`
   hive-02 (8,0 kg) retta 08/03/2027, stagionale 21/01/2027, minimo −0,5 kg il 04/05/2027.
   Sui dati sintetici k = 1 è il caso ideale (stesso consumo ogni anno): il vantaggio sarebbe minore
   su dati reali.
+- **Step 12 — completato**: rifinitura per la demo, nessuna nuova funzionalità.
+  *Credenziali Node-RED*: `.env` è l'unico posto del token; `nodered/docker-entrypoint.sh`
+  (ENTRYPOINT del Dockerfile) scrive `nodered/data/flows_cred.json` (config node
+  `b3a1f0c2d4e56789`) da `INFLUXDB_TOKEN` a ogni avvio e poi lancia l'entrypoint originale;
+  `credentialSecret: false` in `settings.js` (file in chiaro, in `.gitignore`, mai nei log). Un clone
+  pulito funziona senza passi manuali. *Simulatore*: sottoscrizioni (cmd, perturbation/set, event) e
+  pubblicazioni di `online`, stato attuatori e stato perturbazioni sono in `Hive._on_connected`,
+  chiamata dalla callback `on_connect` di `MqttClient` (`set_connect_callback`) a ogni connessione;
+  connessione con `connect_async` + `reconnect_delay_set(1, 30)`, quindi il simulatore parte anche
+  se il broker non c'è ancora. Prima della correzione, dopo `docker compose restart mosquitto` le
+  arnie continuavano a pubblicare ma non ricevevano più nulla (preset freddo ignorato, heater OFF
+  dopo 82 s); dopo, heater ON in 11 s. Node-RED si riconnette da solo (circa 15 s) e risottoscrive;
+  analytics apre una connessione nuova a ogni run. *Reset*: `scripts/reset-demo.sh` (down -v, rimozione
+  di `nodered/data/context/`, up -d --build, attesa del primo run di analytics), circa 45 s. *Dashboard*:
+  nel peso a 12 mesi le annotation non bastano (seguono l'intervallo della dashboard), quindi la
+  smielatura ottimale e reale sono serie a punti con join sul peso giornaliero; le annotation restano
+  solo sul grafico delle riserve (`filter.ids`); previsioni mostrate a minimo 0 kg; il riquadro del
+  minimo stagionale mostra "esaurite: deficit X kg: cibo da integrare" se il minimo è negativo;
+  `noValue` in italiano ovunque, interfaccia Grafana in italiano (`GF_USERS_DEFAULT_LANGUAGE`),
+  nessun errore di avvio di Grafana (`GF_PLUGINS_PREINSTALL_DISABLED`, cartelle `plugins/` e
+  `alerting/` vuote). *README*: diagramma Mermaid dell'architettura, "Prima della demo", scaletta
+  della demo con tempi misurati (heater ON 10 s, fan ON 25 s, alert humidity 140 s, weight_drop
+  10 s, inactivity 182 s, Last Will < 1 s) e "Limiti noti".
 - **Step successivo**: da concordare con lo sviluppatore — non
   procedere senza il suo via libera esplicito.
 

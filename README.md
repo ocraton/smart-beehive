@@ -10,6 +10,11 @@ cp .env.example .env    # then edit the values (never commit .env)
 docker compose up -d --build
 ```
 
+That is all: no step in the Node-RED editor or in Grafana is needed (the InfluxDB token of
+Node-RED is generated from `.env` at startup, the data source and the dashboards are
+provisioned). About a minute after the start, the telemetry is in InfluxDB and the
+dashboards show history and forecasts.
+
 Startup order: `influxdb` (healthy) → `backfill` (writes two years of history and
 exits) → `simulator` (starts only when the backfill has completed successfully).
 The hives are defined once, in `x-hive-ids` at the top of `docker-compose.yml`, and
@@ -44,6 +49,100 @@ sudo chown -R 1000:1000 nodered/data
 | nodered   | http://localhost:1880   | flows saved to `nodered/data/flows.json`   |
 | analytics | —                       | forecasts every 10 min, writes them to InfluxDB |
 | grafana   | http://localhost:3000   | Apiary dashboard, no login (anonymous viewer) |
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph sim["Simulated hives (Docker)"]
+        SIM["simulator<br/>hive-01, hive-02"]
+        BF["backfill<br/>(one-shot: 800 days of history)"]
+    end
+    MQ{{"mosquitto<br/>MQTT broker"}}
+    subgraph nr["Node-RED"]
+        ING["Ingestion"]
+        CTL["Control<br/>(heater/fan, hysteresis)"]
+        CFG["Config<br/>(thresholds.json)"]
+        ANO["Anomalies<br/>(3 rules)"]
+        CON["Scenarios console<br/>:1880/dashboard"]
+    end
+    DB[("InfluxDB 2<br/>telemetry, actuator, alert,<br/>reserves, forecast*, backtest")]
+    AN["analytics<br/>(Python, numpy)"]
+    GF["Grafana<br/>:3000"]
+
+    SIM -- "apiary/{id}/sensors/*  (QoS 0)<br/>apiary/{id}/status  (retained, LWT)" --> MQ
+    MQ -- "apiary/{id}/actuators/*/cmd  (QoS 1)" --> SIM
+    SIM -- "actuators/*/state (retained)" --> MQ
+    MQ -- "sensors/#" --> ING
+    ING --> DB
+    MQ -- "sensors/#, state" --> CTL
+    CTL -- "actuators/*/cmd" --> MQ
+    CFG -- "apiary/{id}/config (retained)" --> MQ
+    MQ -- "sensors/#" --> ANO
+    ANO -- "apiary/{id}/alerts" --> MQ
+    ANO --> DB
+    CTL -- "confirmed states" --> DB
+    BF --> DB
+    MQ -- "config (stores)" --> AN
+    DB -- "daily weight" --> AN
+    AN -- "reserves, forecasts, backtest" --> DB
+    DB --> GF
+    CON -. "sim/{id}/perturbation/set<br/>sim/{id}/event" .-> MQ
+    MQ -. "sim/ channel (not part of the system)" .-> SIM
+```
+
+The dashed arrows are the `sim/` channel: it only drives the simulated environment (cold
+waves, extra humidity, swarm) and would not exist with real hives. Ingestion, control loop and
+Grafana never subscribe to it.
+
+## Before the demo
+
+```bash
+scripts/reset-demo.sh
+```
+
+It stops the stack and deletes the volumes (InfluxDB, Grafana, broker) and the saved state
+of the Node-RED rules, rebuilds and starts everything, and waits for the first run of the
+analytics. It works from any folder of the repository and takes about 45 seconds when the
+images are cached. At the end there are no alerts or actuator states from previous tests, the
+history is regenerated and the forecasts are present. Dashboards: http://localhost:3000
+(**Apiary**, **Apiary - Previsioni**), console: http://localhost:1880/dashboard.
+
+## Demo script (12-15 minutes)
+
+The times are the ones measured on a real run (seconds after the click on the console, which
+sends the preset on `sim/{hive_id}/perturbation/set`); the weather of the simulator can move them
+by some seconds. Keep the **Apiary** dashboard (refresh 5 s, "Ultimi 30 minuti") on one window
+and the console on another.
+
+| # | Step | What to open / click | What you see | Requirement shown |
+|---|------|----------------------|--------------|-------------------|
+| 1 | Start and architecture (1-2 min) | Show the diagram above; `docker compose ps`; http://localhost:1880 (flows: Ingestion, Config, Control, Anomalies, Scenarios) | 7 containers, startup order influxdb → backfill → simulator; one broker, one simulator with two hives | Architecture, multi-container deployment |
+| 2 | Multi-hive monitoring (1 min) | Grafana **Apiary**, variable "Arnia" (All / one hive) | Brood temperature, humidity, weight and flights of hive-01 and hive-02, outdoor weather, 12 months of history | Remote monitoring of several hives |
+| 3 | Cold wave → heater (2 min) | Console: arnia **hive-01**, button **Ondata di freddo**; Grafana **Apiary**, row "Attuatori" | Outdoor temperature drops, the brood temperature goes under 32 °C and the heater turns ON about **10 s** after the click (confirmed on `.../heater/state`); with **Normale** it turns OFF about **35 s** later, only when the brood is over 33.5 °C (hysteresis: 32.0 on, 33.5 off) | Control loop on heating, thresholds with hysteresis |
+| 4 | Persistent humidity → fan + alert (3 min) | Console: **hive-01**, **Umidità persistente**; row "Attuatori" and "Anomalie" | The fan turns ON after about **25 s** (heater stays off: the fan never cools below 33.3 °C); the `humidity` alert (warning) is raised after about **140 s** (24 consecutive readings above 75 %); with **Normale** it is resolved after about **20 s** and the fan turns OFF after about **35 s**. The alert is also an annotation on the charts | Control loop on ventilation, anomaly detection (humidity) |
+| 5 | Swarm → weight_drop (1 min) | Console: **hive-02**, **Sciamatura** | Weight falls by 2.5 kg in 3 ticks; the critical `weight_drop` alert is raised after about **10 s** and resolved after about **65 s** (the rule looks at the last 60 s) | Anomaly detection (sudden weight drop) |
+| 6 | Weak colony → inactivity (3-4 min) | Console: **hive-02**, **Colonia debole** | Flights drop to 5 %; with favorable weather (outdoor temperature 15-30 °C, humidity under 80 %) the `inactivity` alert is raised after about **180 s** (24 readings); back to **Normale** it is resolved in about **15 s**. *Warning*: at night, or with bad weather, the rule is not evaluable and the alert may take longer (it is by design) | Anomaly detection (inactivity with good weather) |
+| 7 | Forecasts (3-4 min) | Grafana **Apiary - Previsioni** (link "Previsioni") | Reserves of hive-02 (about 8 kg) and hive-01 (about 19.5 kg); the line (dashed) against the seasonal method (dotted); the seasonal one shows hive-02 running out of food in January (tile "esaurite: deficit ..., cibo da integrare") and hive-01 at the limit (minimum about 4.5 kg in May, under the 5 kg threshold); the line is optimistic (hive-01: depletion in more than two years) or finds no trend (hive-02: R² low). Backtest tables: MAE and bias of baseline, line and three seasonal variants, October vs November-February. Harvest: optimal vs real date | Forecasting on the history (moving average, exponential smoothing, regression, seasonal method, backtest) |
+| 8 | Optional: Last Will (1 min) | `docker kill beehive_simulator`; `docker compose exec mosquitto mosquitto_sub -t 'apiary/+/status' -v`; console | Both hives go `offline` in **under 1 s** (the broker publishes the Last Will when the connection drops) and disappear from the console table; `docker compose start simulator` brings them `online` again after about **6 s** | MQTT Last Will and Testament |
+| 9 | Reset | `scripts/reset-demo.sh` | Clean state in about 45 s | Repeatable demo |
+
+## Known limits
+
+- **Synthetic data.** Weight, weather and history come from a generator (the backfill) and from
+  the simulator, not from real hives. The two years of history have the same beekeeping calendar
+  (harvest, feeding, winter consumption) and different weather: for this reason the seasonal
+  method has an advantage in the backtest (`k = 1` is the ideal case) that real data would not
+  give. The linear forecast is noisy by design: its result can change a lot from one day to the
+  next (e.g. hive-02 "no depletion" or "in 144 days").
+- **Weight drop window.** `weight_drop` compares the weight with the maximum of the last 60 s:
+  a loss spread over a longer time is not detected, and a restart of the simulator within 60 s
+  with a weight more than 1.5 kg lighter is seen as a drop.
+- **Security.** Anonymous access to Grafana (Viewer) and a broker without authentication or TLS
+  are meant for a local demo only. The InfluxDB token is stored in `.env` and in the generated
+  `nodered/data/flows_cred.json` (both git-ignored, the latter in plain text).
+- **Docker kill.** A container stopped with `docker kill` is not restarted by Docker on its
+  own (it counts as a manual stop): use `docker compose start simulator`.
 
 ## Verification
 
@@ -92,11 +191,11 @@ docker compose exec influxdb influx query --org beehive --token "$INFLUXDB_TOKEN
 No point should have a 1970 timestamp, and `docker compose logs nodered` should
 show no errors.
 
-**After a fresh clone:** `nodered/data/flows_cred.json` is git-ignored, so the
-InfluxDB token is not in the repo. Open http://localhost:1880, double-click the
-`influxdb batch` node, edit the "InfluxDB beehive" server, paste the value of
-`INFLUXDB_TOKEN` from your `.env` in the Token field, then Deploy. This is
-needed only once.
+**Fresh clone:** no manual step. `.env` is the only place where the InfluxDB token lives:
+at every start the Node-RED container generates `nodered/data/flows_cred.json`
+(git-ignored, plain JSON because `credentialSecret: false` in `settings.js`) from
+`INFLUXDB_TOKEN`, with `nodered/docker-entrypoint.sh`, and then starts Node-RED as usual.
+The token is never printed in the logs.
 
 ## Step 5 verification
 

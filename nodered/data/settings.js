@@ -41,7 +41,10 @@ module.exports = {
      * node-red from being able to decrypt your existing credentials and they will be
      * lost.
      */
-    //credentialSecret: "a-secret-key",
+    // Credentials are stored as plain JSON in flows_cred.json (in .gitignore, like .env):
+    // the file is generated at every start from INFLUXDB_TOKEN by docker-entrypoint.sh,
+    // so the token lives in .env only and a clean clone needs no manual step.
+    credentialSecret: false,
 
     /** By default, the flow JSON will be formatted over multiple lines making
      * it easier to compare changes when using version control.

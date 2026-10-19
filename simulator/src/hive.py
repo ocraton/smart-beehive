@@ -72,33 +72,39 @@ class Hive:
             f"sim/{hive_id}/event": self._on_sim_event,
         }
 
-        # Setup MQTT
+        # Setup MQTT (non blocking: the subscriptions are made in _on_connected)
         self._setup_mqtt()
 
     def _setup_mqtt(self):
-        will_topic = f"apiary/{self.hive_id}/status"
-        self.mqtt.set_will(will_topic, "offline", qos=1)
+        self.mqtt.set_will(f"apiary/{self.hive_id}/status", "offline", qos=1)
         self.mqtt.set_message_callback(self._on_mqtt_message)
+        self.mqtt.set_connect_callback(self._on_connected)
+        # Returns at once: _on_connected runs when the broker is reached, also if it is late
         self.mqtt.connect()
 
+    def _on_connected(self):
+        """Subscriptions and retained state: at every connection, not only the first.
+
+        The session is clean, so after a broker restart the subscriptions are gone and the
+        retained messages may be lost: everything is set up again.
+        """
         # Subscribe to actuator commands
-        cmd_topic = f"apiary/{self.hive_id}/actuators/+/cmd"
-        self.mqtt.subscribe(cmd_topic, qos=1)
+        self.mqtt.subscribe(f"apiary/{self.hive_id}/actuators/+/cmd", qos=1)
 
         # Simulator-only channel, outside apiary/: a real hive would not have it
         self.mqtt.subscribe(f"sim/{self.hive_id}/perturbation/set", qos=1)
         self.mqtt.subscribe(f"sim/{self.hive_id}/event", qos=1)
 
         # Publish online status
-        self.mqtt.publish(will_topic, "online", qos=1, retain=True)
+        self.mqtt.publish(f"apiary/{self.hive_id}/status", "online", qos=1, retain=True)
 
-        # Publish the real initial actuator state, so subscribers never see a stale retained one
+        # Publish the real actuator state, so subscribers never see a stale retained one
         self._publish_actuator_state("heater")
         self._publish_actuator_state("fan")
 
-        # Retained defaults: a simulator restart also resets what the console shows
+        # Retained perturbation state (the current one: a console must show what is applied)
         self._publish_perturbation_state()
-        logger.info(f"Hive {self.hive_id} initialized and online")
+        logger.info(f"Hive {self.hive_id} online, subscriptions and retained state published")
 
     def _publish_actuator_state(self, name):
         is_on = self.heater_on if name == "heater" else self.fan_on

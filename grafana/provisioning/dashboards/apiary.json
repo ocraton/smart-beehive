@@ -176,7 +176,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "noValue": "Nessun dato"
         },
         "overrides": []
       },
@@ -234,7 +235,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "noValue": "Nessun dato"
         },
         "overrides": []
       },
@@ -292,7 +294,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "noValue": "Nessun dato"
         },
         "overrides": []
       },
@@ -351,7 +354,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "noValue": "Nessun dato"
         },
         "overrides": []
       },
@@ -434,7 +438,8 @@
                 }
               }
             }
-          ]
+          ],
+          "noValue": "Nessun dato"
         },
         "overrides": []
       },
@@ -496,7 +501,8 @@
           "custom": {
             "align": "auto",
             "filterable": false
-          }
+          },
+          "noValue": "Nessuna anomalia nell'intervallo"
         },
         "overrides": [
           {
@@ -667,7 +673,8 @@
             "fillOpacity": 0,
             "showPoints": "never",
             "spanNulls": false
-          }
+          },
+          "noValue": "Nessun dato"
         },
         "overrides": []
       },
@@ -720,7 +727,8 @@
             "fillOpacity": 0,
             "showPoints": "never",
             "spanNulls": false
-          }
+          },
+          "noValue": "Nessun dato"
         },
         "overrides": []
       },
@@ -773,7 +781,8 @@
             "fillOpacity": 0,
             "showPoints": "never",
             "spanNulls": false
-          }
+          },
+          "noValue": "Nessun dato"
         },
         "overrides": []
       },
@@ -827,7 +836,8 @@
             "fillOpacity": 0,
             "showPoints": "never",
             "spanNulls": false
-          }
+          },
+          "noValue": "Nessun dato"
         },
         "overrides": []
       },
@@ -893,7 +903,8 @@
             "fillOpacity": 0,
             "showPoints": "never",
             "spanNulls": false
-          }
+          },
+          "noValue": "Nessun dato"
         },
         "overrides": []
       },
@@ -946,7 +957,8 @@
             "fillOpacity": 0,
             "showPoints": "never",
             "spanNulls": false
-          }
+          },
+          "noValue": "Nessun dato"
         },
         "overrides": []
       },
@@ -1012,7 +1024,8 @@
             "fillOpacity": 0,
             "showPoints": "never",
             "spanNulls": false
-          }
+          },
+          "noValue": "Nessun dato"
         },
         "overrides": []
       },
@@ -1037,7 +1050,8 @@
           "query": "from(bucket: \"beehive\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.sensor == \"weight\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> aggregateWindow(every: 1d, fn: mean, createEmpty: false, timeSrc: \"_start\")\n  |> keep(columns: [\"_time\", \"_value\", \"hive_id\"])"
         }
       ],
-      "timeFrom": "12M"
+      "timeFrom": "12M",
+      "hideTimeOverride": true
     },
     {
       "id": 20,
@@ -1066,7 +1080,8 @@
             "fillOpacity": 0,
             "showPoints": "never",
             "spanNulls": false
-          }
+          },
+          "noValue": "Nessun dato"
         },
         "overrides": [
           {
@@ -1174,7 +1189,8 @@
           "query": "from(bucket: \"beehive\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.sensor == \"ext_temp\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> aggregateWindow(every: 1d, fn: max, createEmpty: false, timeSrc: \"_start\")\n  |> keep(columns: [\"_time\", \"_value\", \"hive_id\"])"
         }
       ],
-      "timeFrom": "12M"
+      "timeFrom": "12M",
+      "hideTimeOverride": true
     },
     {
       "id": 21,
@@ -1204,7 +1220,8 @@
             "showPoints": "never",
             "spanNulls": false
           },
-          "decimals": 0
+          "decimals": 0,
+          "noValue": "Nessun dato"
         },
         "overrides": []
       },
@@ -1229,7 +1246,8 @@
           "query": "from(bucket: \"beehive\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.sensor == \"flights\")\n  |> filter(fn: (r) => contains(value: r.hive_id, set: ${hive_id:json}))\n  |> aggregateWindow(every: 1d, fn: mean, createEmpty: false, timeSrc: \"_start\")\n  |> map(fn: (r) => ({r with _value: r._value * 24.0}))\n  |> keep(columns: [\"_time\", \"_value\", \"hive_id\"])"
         }
       ],
-      "timeFrom": "12M"
+      "timeFrom": "12M",
+      "hideTimeOverride": true
     }
   ]
 }

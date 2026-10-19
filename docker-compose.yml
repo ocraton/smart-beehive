@@ -124,6 +124,9 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?copy .env.example to .env}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?copy .env.example to .env}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_DEFAULT_LANGUAGE: it-IT
+      # No plugin is needed (the InfluxDB data source is built in): avoids a startup error of the background installer
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/apiary.json
       # Anonymous read-only access, meant for the local demo: disable in a real deployment
       GF_AUTH_ANONYMOUS_ENABLED: "true"
