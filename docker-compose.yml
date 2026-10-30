@@ -31,7 +31,9 @@ services:
       - ./simulator/profiles.json:/config/profiles.json:ro
     restart: unless-stopped
 
-  # One-shot: writes a year of synthetic history before the live simulator starts
+  # One-shot: writes BACKFILL_DAYS (800, about two years plus the autumn before, needed by
+  # the seasonal method and the October backtest origins) of synthetic hourly history
+  # before the live simulator starts
   backfill:
     build: ./backfill
     container_name: beehive_backfill

@@ -1,4 +1,4 @@
-"""Synthetic year of hourly telemetry for an apiary in central Italy.
+"""Synthetic hourly telemetry for an apiary in central Italy, over any date range.
 
 The generator is organised on the four components of a time series (lesson 10):
 

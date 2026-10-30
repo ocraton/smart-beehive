@@ -43,7 +43,7 @@ sudo chown -R 1000:1000 nodered/data
 | Service   | URL / port              | Notes                                      |
 |-----------|-------------------------|--------------------------------------------|
 | mosquitto | `localhost:1883`        | MQTT broker, anonymous access              |
-| backfill  | —                       | one-shot: writes a year of history, then exits |
+| backfill  | —                       | one-shot: writes ~800 days of hourly history (`BACKFILL_DAYS`), then exits |
 | simulator | —                       | publishes telemetry for `HIVE_IDS`         |
 | influxdb  | http://localhost:8086   | login with `INFLUXDB_USERNAME`/`PASSWORD`  |
 | nodered   | http://localhost:1880   | flows saved to `nodered/data/flows.json`   |

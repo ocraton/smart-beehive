@@ -26,7 +26,7 @@ def run(token):
     org = os.environ["INFLUXDB_ORG"]
     bucket = os.environ["INFLUXDB_BUCKET"]
     hive_ids = [h.strip() for h in os.environ["HIVE_IDS"].split(",") if h.strip()]
-    days = int(os.environ.get("BACKFILL_DAYS", "365"))
+    days = int(os.environ.get("BACKFILL_DAYS", "800"))
     seed = int(os.environ.get("BACKFILL_SEED", "42"))
     profiles = json.loads(Path(os.environ["PROFILES_PATH"]).read_text())
 
